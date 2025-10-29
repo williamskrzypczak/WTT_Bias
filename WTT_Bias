@@ -1,0 +1,331 @@
+//@version=5
+indicator("WTT_Bias", "WTT_Bias", overlay=false)
+
+// ============================================================================
+// Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
+//
+// WaveRider Trading Technologies
+// 
+// REVISION HISTORY:
+// R1.10 - Updated bearish color
+//        - Changed bearish color from purple to gray
+//        - Maintains teal for bullish and gray for bearish/neutral
+// R1.9 - Updated histogram colors
+//       - Changed bullish color from green to teal
+//       - Changed bearish color from red to purple
+//       - Maintains neutral gray color
+// R1.8 - Changed default lower timeframe
+//       - Changed default lower timeframe from 1 minute to 30 minutes
+//       - Updated tooltip to reflect new default
+//       - Better default for most chart timeframes
+// R1.7 - Made table more compact
+//       - Abbreviated metric descriptions for better space efficiency
+//       - "Upticks / Downticks" → "Up/Down Ticks"
+//       - "Buy Volume / Sell Volume" → "Buy/Sell Vol"
+//       - "Measurement Mode" → "Mode"
+//       - "Smoothed Bias" → "Bias"
+// R1.6 - Enhanced table color scheme
+//       - Changed value column text color to blue for better contrast
+//       - Keeps colored text for bias value (green/red/gray)
+//       - Maintains white text for metric labels
+// R1.5 - Improved table readability
+//       - Changed metric column text color to white for better visibility
+//       - Maintains black text for values and colored text for bias
+// R1.4 - Fixed table display issue
+//       - Table now recreates on each update to show metric labels
+//       - Fixed issue where metric labels weren't displaying
+//       - Table properly shows all data including labels
+// R1.3 - Improved table metric descriptions
+//       - Updated metric labels for better clarity
+//       - Changed "Ticks (Up/Down)" to "Upticks / Downticks"
+//       - Changed "Volume (Buy/Sell)" to "Buy Volume / Sell Volume"
+//       - Changed "Bias Mode" to "Measurement Mode"
+//       - Changed "Bias (S) [-1..1]" to "Smoothed Bias"
+// R1.2 - Fixed info table data display
+//       - Table now properly shows upticks/downticks and volume data
+//       - Uses real-time data for live bar, LTF data for historical bars
+//       - All table fields now populate correctly
+// R1.1 - Enabled real-time info table
+//       - Uncommented and activated info table display
+//       - Shows upticks/downticks count in real-time
+//       - Displays buy/sell volume, bias mode, and smoothed bias value
+// R1.0 - Initial release - Intrabar bid/ask bias (proxy)
+//       - Real-time uptick/downtick counting with volume deltas
+//       - Normalized bias oscillator (-1 to +1)
+//       - Optional info table and alerts
+//
+// This indicator approximates buy/sell (bid/ask) activity within the current
+// bar by classifying real-time close changes as upticks/downticks and
+// distributing the current bar's volume changes accordingly. Due to Pine
+// Script's lack of true order book access, this measures a proxy, not actual
+// bid/ask prints.
+// ============================================================================
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+// Group: Detection Settings
+biasMode = input.string(
+     defval="Volume",
+     title="Bias Mode",
+     options=["Volume", "Ticks"],
+     group="Detection Settings",
+     tooltip="How to measure bias: Volume uses realtime volume deltas per uptick/downtick; Ticks counts upticks vs downticks.")
+
+sourceMode = input.string(
+     defval="Auto (Realtime+History)",
+     title="Source Mode",
+     options=["Auto (Realtime+History)", "Realtime only", "Lower TF only"],
+     group="Detection Settings",
+     tooltip="Auto: realtime proxy on the last (live) bar, lower timeframe aggregation on historical bars. Realtime only: realtime proxy on live bar, lower TF on historical bars. Lower TF only: always use lower timeframe aggregation.")
+
+lowerTf = input.timeframe(
+     defval="30",
+     title="Lower Timeframe (for history)",
+     group="Detection Settings",
+     tooltip="Timeframe used to approximate intrabar buy/sell on historical bars. Set lower than your chart TF (e.g., 30 minutes).")
+
+neutralDeadband = input.float(
+     defval=0.05,
+     title="Neutral Deadband",
+     minval=0.0, maxval=0.5, step=0.01,
+     group="Detection Settings",
+     tooltip="Bias within ±deadband is treated as neutral to suppress minor noise.")
+
+smoothLength = input.int(
+     defval=3,
+     title="Smoothing Length",
+     minval=1, maxval=100,
+     group="Detection Settings",
+     tooltip="Simple moving average length applied to the bias after deadband.")
+
+alertThreshold = input.float(
+     defval=0.20,
+     title="Alert Threshold",
+     minval=0.0, maxval=1.0, step=0.01,
+     group="Detection Settings",
+     tooltip="Trigger alerts when smoothed bias crosses above +threshold or below -threshold.")
+
+// Group: Visual Settings
+showHistogram = input.bool(
+     defval=true,
+     title="Show Bias Histogram",
+     group="Visual Settings",
+     tooltip="Show bias as a histogram from -1 to +1.")
+
+showSignalLine = input.bool(
+     defval=true,
+     title="Show Signal Line",
+     group="Visual Settings",
+     tooltip="Plot the smoothed bias as a line over the histogram.")
+
+showInfoTable = input.bool(
+     defval=true,
+     title="Show Info Table (last bar)",
+     group="Visual Settings",
+     tooltip="Display a compact table with upticks/downticks and buy/sell volume on the last bar.")
+
+// Group: Colors
+bullishColor = input.color(
+     defval=color.new(color.teal, 0),
+     title="Bullish Color",
+     group="Colors")
+
+bearishColor = input.color(
+     defval=color.new(color.gray, 0),
+     title="Bearish Color",
+     group="Colors")
+
+neutralColor = input.color(
+     defval=color.new(color.gray, 0),
+     title="Neutral Color",
+     group="Colors")
+
+histTransparency = input.int(
+     defval=10,
+     title="Histogram Transparency (0-100)",
+     minval=0, maxval=100,
+     group="Colors")
+
+lineTransparency = input.int(
+     defval=0,
+     title="Line Transparency (0-100)",
+     minval=0, maxval=100,
+     group="Colors")
+
+// ============================================================================
+// CALCULATIONS - REALTIME PROXY (LAST BAR)
+// ============================================================================
+// State variables for intrabar counting
+var int upTickCount = 0
+var int downTickCount = 0
+var float buyVolume = 0.0
+var float sellVolume = 0.0
+var float lastCloseRt = na
+var float lastVolumeRt = na
+
+// Reset counters at the start of each new bar
+if barstate.isnew
+    upTickCount := 0
+    downTickCount := 0
+    buyVolume := 0.0
+    sellVolume := 0.0
+    lastCloseRt := close
+    lastVolumeRt := volume
+
+// On each realtime update of current bar, classify uptick/downtick and allocate volume delta
+if barstate.isrealtime
+    priceDelta = close - nz(lastCloseRt, close)
+    volumeDelta = math.max(volume - nz(lastVolumeRt, volume), 0)
+    isUpTick = priceDelta > 0
+    isDownTick = priceDelta < 0
+
+    if isUpTick
+        upTickCount := upTickCount + 1
+        buyVolume := buyVolume + volumeDelta
+    else if isDownTick
+        downTickCount := downTickCount + 1
+        sellVolume := sellVolume + volumeDelta
+    else
+        // No price change: evenly apportion any volume delta
+        buyVolume := buyVolume + volumeDelta * 0.5
+        sellVolume := sellVolume + volumeDelta * 0.5
+
+    lastCloseRt := close
+    lastVolumeRt := volume
+
+// Realtime raw biases
+rtTickTotal = upTickCount + downTickCount
+rtTickBiasRaw = rtTickTotal > 0 ? (upTickCount - downTickCount) / rtTickTotal : 0.0
+rtVolTotal = buyVolume + sellVolume
+rtVolBiasRaw = rtVolTotal > 0 ? (buyVolume - sellVolume) / rtVolTotal : 0.0
+
+// ============================================================================
+// CALCULATIONS - LOWER TIMEFRAME AGGREGATION (HISTORICAL & OPTIONAL LIVE)
+// ============================================================================
+// Helper functions evaluated in lower timeframe context
+calcLtfBuyAgg() =>
+    barBuy = close > close[1] ? volume : close < close[1] ? 0.0 : volume * 0.5
+    cumBuy = ta.cum(barBuy)
+    newHtfBar = ta.change(time(timeframe.period))
+    startCum = nz(ta.valuewhen(newHtfBar, cumBuy[1], 0), 0.0)
+    cumBuy - startCum
+
+calcLtfSellAgg() =>
+    barSell = close < close[1] ? volume : close > close[1] ? 0.0 : volume * 0.5
+    cumSell = ta.cum(barSell)
+    newHtfBar = ta.change(time(timeframe.period))
+    startCum = nz(ta.valuewhen(newHtfBar, cumSell[1], 0), 0.0)
+    cumSell - startCum
+
+calcLtfUpAgg() =>
+    barUp = close > close[1] ? 1.0 : 0.0
+    cumUp = ta.cum(barUp)
+    newHtfBar = ta.change(time(timeframe.period))
+    startCum = nz(ta.valuewhen(newHtfBar, cumUp[1], 0), 0.0)
+    cumUp - startCum
+
+calcLtfDownAgg() =>
+    barDown = close < close[1] ? 1.0 : 0.0
+    cumDown = ta.cum(barDown)
+    newHtfBar = ta.change(time(timeframe.period))
+    startCum = nz(ta.valuewhen(newHtfBar, cumDown[1], 0), 0.0)
+    cumDown - startCum
+
+// Inside the lower timeframe, classify each LTF bar by tick rule and accumulate within the current chart TF bar boundaries.
+ltfBuyAgg = request.security(syminfo.tickerid, lowerTf, calcLtfBuyAgg(), barmerge.gaps_off, barmerge.lookahead_off)
+ltfSellAgg = request.security(syminfo.tickerid, lowerTf, calcLtfSellAgg(), barmerge.gaps_off, barmerge.lookahead_off)
+
+// LTF ticks approximation: count up/down bars at the lower timeframe
+ltfUpAgg = request.security(syminfo.tickerid, lowerTf, calcLtfUpAgg(), barmerge.gaps_off, barmerge.lookahead_off)
+ltfDownAgg = request.security(syminfo.tickerid, lowerTf, calcLtfDownAgg(), barmerge.gaps_off, barmerge.lookahead_off)
+
+ltfVolTotal = ltfBuyAgg + ltfSellAgg
+ltfVolBiasRaw = ltfVolTotal > 0 ? (ltfBuyAgg - ltfSellAgg) / ltfVolTotal : 0.0
+ltfTickTotal = ltfUpAgg + ltfDownAgg
+ltfTickBiasRaw = ltfTickTotal > 0 ? (ltfUpAgg - ltfDownAgg) / ltfTickTotal : 0.0
+
+// ============================================================================
+// CALCULATIONS - SELECTED SOURCE AND MODE
+// ============================================================================
+useRealtime = (sourceMode == "Realtime only" and barstate.isrealtime) or (sourceMode == "Auto (Realtime+History)" and barstate.isrealtime)
+
+rawBias = biasMode == "Volume"
+     ? (useRealtime ? rtVolBiasRaw : ltfVolBiasRaw)
+     : (useRealtime ? rtTickBiasRaw : ltfTickBiasRaw)
+
+// Apply deadband
+applyDeadband(val, db) => math.abs(val) < db ? 0.0 : val
+biased = applyDeadband(rawBias, neutralDeadband)
+
+// Smooth
+smoothedBias = ta.sma(biased, smoothLength)
+
+// Visual colors
+biasColor = smoothedBias > 0 ? bullishColor : smoothedBias < 0 ? bearishColor : neutralColor
+
+// ============================================================================
+// VISUAL ELEMENTS
+// ============================================================================
+hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
+plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns,
+     color=color.new(biasColor, histTransparency))
+plot(showSignalLine ? smoothedBias : na, "Signal", color=color.new(color.white, lineTransparency), linewidth=2)
+
+// ============================================================================
+// TABLE (REAL-TIME DATA)
+// ============================================================================
+var table biasInfoTable = na
+if showInfoTable and barstate.islast
+    // Delete existing table to recreate with updated data
+    if not na(biasInfoTable)
+        table.delete(biasInfoTable)
+    
+    // Create new table
+    biasInfoTable := table.new(position.top_right, 2, 5, bgcolor=color.new(color.white, 95), border_width=2)
+    
+    // Header
+    table.cell(biasInfoTable, 0, 0, "Metric", bgcolor=color.gray, text_color=color.white)
+    table.cell(biasInfoTable, 1, 0, "Value",  bgcolor=color.gray, text_color=color.white)
+
+    // Get current bar data (use real-time if available, otherwise LTF data)
+    currentUpTicks = barstate.isrealtime ? upTickCount : ltfUpAgg
+    currentDownTicks = barstate.isrealtime ? downTickCount : ltfDownAgg
+    currentBuyVol = barstate.isrealtime ? buyVolume : ltfBuyAgg
+    currentSellVol = barstate.isrealtime ? sellVolume : ltfSellAgg
+
+    // Rows
+    table.cell(biasInfoTable, 0, 1, "Up/Down Ticks", text_color=color.white)
+    table.cell(biasInfoTable, 1, 1, str.tostring(currentUpTicks) + " / " + str.tostring(currentDownTicks), text_color=color.blue)
+
+    table.cell(biasInfoTable, 0, 2, "Buy/Sell Vol", text_color=color.white)
+    volText = str.tostring(currentBuyVol, "#.##") + " / " + str.tostring(currentSellVol, "#.##")
+    table.cell(biasInfoTable, 1, 2, volText, text_color=color.blue)
+
+    table.cell(biasInfoTable, 0, 3, "Mode", text_color=color.white)
+    table.cell(biasInfoTable, 1, 3, biasMode, text_color=color.blue)
+
+    table.cell(biasInfoTable, 0, 4, "Bias", text_color=color.white)
+    table.cell(biasInfoTable, 1, 4, str.tostring(smoothedBias, "#.###"), text_color=biasColor)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+turnedBullish = ta.crossover(smoothedBias, alertThreshold)
+turnedBearish = ta.crossunder(smoothedBias, -alertThreshold)
+flippedBull = ta.crossover(smoothedBias, 0.0)
+flippedBear = ta.crossunder(smoothedBias, 0.0)
+
+if turnedBullish
+    alert("WTT_Bias: Bias crossed above +" + str.tostring(alertThreshold), alert.freq_once_per_bar)
+
+if turnedBearish
+    alert("WTT_Bias: Bias crossed below -" + str.tostring(alertThreshold), alert.freq_once_per_bar)
+
+if flippedBull
+    alert("WTT_Bias: Bias flipped above 0", alert.freq_once_per_bar)
+
+if flippedBear
+    alert("WTT_Bias: Bias flipped below 0", alert.freq_once_per_bar)
+
+// // END OF INDICATOR

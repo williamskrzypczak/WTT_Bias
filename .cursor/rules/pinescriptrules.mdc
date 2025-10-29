@@ -1,0 +1,904 @@
+---
+alwaysApply: true
+---
+# Pine Script Best Practices Guide
+**Version 1.0**  
+**Copyright © 2025 Bulldog Ventures Inc. All rights reserved.**
+
+---
+
+## Table of Contents
+
+1. [File Organization & Structure](#1-file-organization--structure)
+2. [Naming Conventions](#2-naming-conventions)
+3. [Code Modularity (OOP-Inspired)](#3-code-modularity-oop-inspired)
+4. [Documentation Standards](#4-documentation-standards)
+5. [Input Parameters](#5-input-parameters)
+6. [Calculations & Logic](#6-calculations--logic)
+7. [Visual Elements](#7-visual-elements)
+8. [Performance & Efficiency](#8-performance--efficiency)
+9. [Error Handling](#9-error-handling)
+10. [Testing & Maintenance](#10-testing--maintenance)
+
+---
+
+## 1. File Organization & Structure
+
+### 1.1 Standard File Template
+
+Every Pine Script file should follow this structure:
+
+```pinescript
+//@version=5
+indicator("Indicator Name", "Short Name", overlay=true)
+
+// ============================================================================
+// Copyright © YYYY Company Name. All rights reserved.
+//
+// Project/Brand Name
+// 
+// REVISION HISTORY:
+// R1.0 - Initial release - Brief description
+//       - Feature 1
+//       - Feature 2
+//
+// Description of what this indicator does and its purpose.
+// ============================================================================
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+
+// Group 1: Detection Settings
+param1 = input.int(...)
+param2 = input.float(...)
+
+// Group 2: Visual Settings
+param3 = input.bool(...)
+
+// ============================================================================
+// CALCULATIONS
+// ============================================================================
+
+// Calculate core metrics
+value1 = ta.sma(close, 20)
+
+// Determine conditions
+isCondition = value1 > value2
+
+// ============================================================================
+// VISUAL ELEMENTS
+// ============================================================================
+
+// Plots
+plot(value1, "Label", color=color.blue)
+
+// Shapes and markers
+plotshape(isCondition, ...)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+if condition
+    alert("Message", alert.freq_once_per_bar)
+
+// END OF INDICATOR
+```
+
+### 1.2 Section Dividers
+
+Use clear visual separators between major sections:
+
+```pinescript
+// ============================================================================
+// SECTION NAME
+// ============================================================================
+```
+
+### 1.3 Logical Flow
+
+Organize code in this order:
+1. Version declaration and indicator setup
+2. Copyright and documentation
+3. Input parameters (grouped logically)
+4. Constants and configuration
+5. Helper calculations
+6. Main logic and conditions
+7. Visual outputs (plots, shapes, tables)
+8. Alerts
+
+---
+
+## 2. Naming Conventions
+
+### 2.1 Variable Naming
+
+Use **camelCase** for variables and calculations:
+
+```pinescript
+// Good
+atrValue = ta.atr(14)
+movementRatio = movement / atrValue
+isStalling = movementRatio < threshold
+
+// Avoid
+atr_value = ta.atr(14)  // snake_case
+ATRValue = ta.atr(14)   // PascalCase
+```
+
+### 2.2 Boolean Variables
+
+Prefix boolean variables with descriptive verbs:
+
+```pinescript
+// Good
+isUptrend = close > sma
+hasVolume = volume > avgVolume
+shouldAlert = condition1 and condition2
+canTrade = not isHoliday
+
+// Avoid
+uptrend = close > sma
+volume = volume > avgVolume  // Also conflicts with built-in
+alert = condition
+```
+
+### 2.3 Input Parameters
+
+Use clear, descriptive names for inputs:
+
+```pinescript
+// Good
+atrPeriod = input.int(14, "ATR Period", minval=1, group="Detection")
+stallThreshold = input.float(0.35, "Stall Threshold", minval=0.0, maxval=1.0)
+
+// Avoid
+atr = input.int(14, "ATR")  // Too short
+atr_period_for_calculation = input.int(14)  // Too long
+```
+
+### 2.4 Constants
+
+Use UPPERCASE for true constants:
+
+```pinescript
+// Good
+MAX_BARS = 500
+DEFAULT_COLOR = color.blue
+NEUTRAL_THRESHOLD = 0.5
+
+// These are not constants (they change per bar)
+alertMessage = "Price alert"  // Variable, not constant
+```
+
+### 2.5 Color Variables
+
+Suffix color variables with "Color":
+
+```pinescript
+// Good
+bullishColor = color.green
+bearishColor = color.red
+neutralColor = color.gray
+
+// Avoid
+bull = color.green
+bearish = color.red
+```
+
+---
+
+## 3. Code Modularity (OOP-Inspired)
+
+### 3.1 Separation of Concerns
+
+Group related calculations together and separate them from visual logic:
+
+```pinescript
+// ============================================================================
+// CALCULATIONS - TREND DETECTION
+// ============================================================================
+
+// Trend identification
+smaTrend = ta.sma(close, 20)
+isUptrend = close > smaTrend
+isDowntrend = close < smaTrend
+
+// Trend strength
+trendStrength = math.abs(close - smaTrend) / ta.atr(14)
+
+// ============================================================================
+// CALCULATIONS - VOLATILITY
+// ============================================================================
+
+// Volatility metrics
+atrValue = ta.atr(14)
+volatilityRatio = atrValue / close
+
+// ============================================================================
+// VISUAL ELEMENTS
+// ============================================================================
+
+// Only plotting here, no calculations
+plot(smaTrend, "Trend Line", color=isUptrend ? color.green : color.red)
+```
+
+### 3.2 Avoiding Code Duplication
+
+Extract repeated logic into variables:
+
+```pinescript
+// Good
+stallContext = isUptrend ? 1 : isDowntrend ? -1 : 0
+barColor = stallContext == 1 ? orangeColor : stallContext == -1 ? purpleColor : neutralColor
+alertContext = stallContext == 1 ? "Uptrend" : stallContext == -1 ? "Downtrend" : "Neutral"
+
+// Avoid (repeated ternary pattern)
+barColor = isUptrend ? orangeColor : isDowntrend ? purpleColor : neutralColor
+alertText = isUptrend ? "Uptrend" : isDowntrend ? "Downtrend" : "Neutral"
+tableText = isUptrend ? "Up" : isDowntrend ? "Down" : "Neutral"
+```
+
+### 3.3 State Management
+
+Use `var` for state that persists across bars:
+
+```pinescript
+// State variables
+var int signalCount = 0
+var label lastLabel = na
+var float highestPrice = 0.0
+
+// Update state
+if condition
+    signalCount := signalCount + 1
+    
+if high > highestPrice
+    highestPrice := high
+```
+
+### 3.4 Encapsulation Patterns
+
+Group related inputs and calculations:
+
+```pinescript
+// ============================================================================
+// MODULE: VOLUME ANALYSIS
+// ============================================================================
+
+// Inputs
+volumeLookback = input.int(20, "Volume Lookback", group="Volume")
+volumeThreshold = input.float(0.7, "Volume Threshold", group="Volume")
+useVolumeFilter = input.bool(true, "Use Volume Filter", group="Volume")
+
+// Calculations
+avgVolume = ta.sma(volume, volumeLookback)
+volumeRatio = avgVolume > 0 ? volume / avgVolume : 1.0
+isLowVolume = volumeRatio < volumeThreshold
+volumeConfirm = not useVolumeFilter or isLowVolume
+
+// Export/Result
+// Use volumeConfirm in other modules
+```
+
+---
+
+## 4. Documentation Standards
+
+### 4.1 File Header
+
+Always include comprehensive header documentation:
+
+```pinescript
+// ============================================================================
+// Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
+//
+// WaveRider Trading Technologies
+// 
+// REVISION HISTORY:
+// R1.0 - Initial release - ATR-based price stall detection
+//       - Conservative stall detection using ATR comparison
+//       - Orange/purple visual indicators for uptrend/downtrend stalls
+//       - Alert system for stall begins/ends
+//       - Stall strength histogram
+//
+// R1.1 - Enhanced volume filtering
+//       - Added volume confirmation feature
+//       - Improved false signal reduction
+//
+// This indicator detects when price movement stalls by comparing recent
+// price changes to Average True Range (ATR). When price movement drops
+// significantly below normal volatility, a stall condition is signaled.
+// ============================================================================
+```
+
+### 4.2 Inline Comments
+
+Use inline comments to explain **why**, not **what**:
+
+```pinescript
+// Good - Explains reasoning
+movementRatio = atrValue > 0 ? movement / atrValue : 1.0  // Avoid division by zero
+
+// Avoid - States the obvious
+movementRatio = movement / atrValue  // Calculate movement ratio
+```
+
+### 4.3 Section Comments
+
+Document each logical section:
+
+```pinescript
+// ============================================================================
+// CALCULATIONS
+// ============================================================================
+
+// Calculate ATR for volatility baseline
+atrValue = ta.atr(atrPeriod)
+
+// Calculate price movement over lookback period
+priceChange = math.abs(close - close[lookbackPeriod])
+priceRange = high[lookbackPeriod] - low[lookbackPeriod]
+movement = math.max(priceChange, priceRange)
+```
+
+### 4.4 Tooltips
+
+Provide helpful tooltips for all user inputs:
+
+```pinescript
+// Good
+stallThreshold = input.float(0.35, "Stall Threshold", 
+    minval=0.0, maxval=1.0, step=0.05, 
+    group="Detection Settings", 
+    tooltip="Movement must be below this × ATR to signal stall. Lower values = more sensitive.")
+
+confirmationBars = input.int(1, "Confirmation Bars", 
+    minval=1, group="Detection Settings",
+    tooltip="Consecutive bars required to confirm stall. Higher values reduce false signals.")
+```
+
+### 4.5 Complex Logic Documentation
+
+Document complex conditions:
+
+```pinescript
+// Determine if price is stalling with volume confirmation
+// Stall occurs when:
+// 1. Movement is below threshold × ATR (low price activity)
+// 2. Volume is below threshold × average (if filter enabled)
+// 3. Conditions persist for confirmation bars
+isStalling = (movementRatio < stallThreshold) and volumeConfirm
+```
+
+---
+
+## 5. Input Parameters
+
+### 5.1 Grouping
+
+Group related inputs for better UX:
+
+```pinescript
+// Detection parameters
+atrPeriod = input.int(14, "ATR Period", minval=1, group="Detection Settings")
+lookbackPeriod = input.int(20, "Lookback Period", minval=1, group="Detection Settings")
+stallThreshold = input.float(0.35, "Stall Threshold", minval=0.0, maxval=1.0, group="Detection Settings")
+
+// Visual parameters
+showMarkers = input.bool(true, "Show Markers", group="Visual Settings")
+showTable = input.bool(true, "Show Info Table", group="Visual Settings")
+
+// Colors
+bullColor = input.color(color.green, "Bull Color", group="Colors")
+bearColor = input.color(color.red, "Bear Color", group="Colors")
+```
+
+### 5.2 Validation
+
+Use `minval`, `maxval`, and `step` to validate inputs:
+
+```pinescript
+// Good - Prevents invalid values
+period = input.int(14, "Period", minval=1, maxval=500)
+threshold = input.float(0.5, "Threshold", minval=0.0, maxval=1.0, step=0.01)
+
+// Avoid - No validation
+period = input.int(14, "Period")
+threshold = input.float(0.5, "Threshold")
+```
+
+### 5.3 Defaults
+
+Choose sensible defaults based on common use:
+
+```pinescript
+// Good - Common, tested values
+atrPeriod = input.int(14, "ATR Period", minval=1)  // Standard ATR period
+maLength = input.int(20, "MA Length", minval=1)   // Common MA length
+
+// Avoid - Unusual defaults without reason
+atrPeriod = input.int(37, "ATR Period", minval=1)  // Why 37?
+```
+
+### 5.4 Input Organization
+
+Order inputs logically (most important first):
+
+```pinescript
+// 1. Core detection settings
+stallThreshold = input.float(0.35, "Stall Threshold", group="Detection")
+confirmationBars = input.int(1, "Confirmation Bars", group="Detection")
+
+// 2. Advanced settings
+lookbackPeriod = input.int(20, "Lookback Period", group="Advanced")
+volumeThreshold = input.float(0.7, "Volume Threshold", group="Advanced")
+
+// 3. Visual settings
+showMarkers = input.bool(true, "Show Markers", group="Visual")
+
+// 4. Colors (last, as they're cosmetic)
+bullColor = input.color(color.green, "Bull Color", group="Colors")
+```
+
+---
+
+## 6. Calculations & Logic
+
+### 6.1 Division by Zero Protection
+
+Always protect against division by zero:
+
+```pinescript
+// Good
+movementRatio = atrValue > 0 ? movement / atrValue : 1.0
+volumeRatio = avgVolume > 0 ? volume / avgVolume : 1.0
+slope = deltaX != 0 ? deltaY / deltaX : 0
+
+// Avoid
+movementRatio = movement / atrValue  // Can crash if atrValue = 0
+```
+
+### 6.2 NA Value Handling
+
+Handle NA (not available) values appropriately:
+
+```pinescript
+// Good
+validData = not na(close) and not na(close[1])
+change = validData ? close - close[1] : 0
+
+// Check before using
+if not na(indicator)
+    plot(indicator, "Value", color=color.blue)
+
+// Avoid
+change = close - close[1]  // Could be NA on first bar
+```
+
+### 6.3 Historical References
+
+Be mindful of lookback limitations:
+
+```pinescript
+// Good - Check if enough bars exist
+hasEnoughBars = bar_index >= lookbackPeriod
+priceChange = hasEnoughBars ? close - close[lookbackPeriod] : 0
+
+// Avoid
+priceChange = close - close[lookbackPeriod]  // NA on early bars
+```
+
+### 6.4 Boolean Logic Clarity
+
+Use parentheses to clarify complex conditions:
+
+```pinescript
+// Good - Clear precedence
+isStalling = (movementRatio < stallThreshold) and (volumeConfirm or not useFilter)
+canAlert = (isCondition and not wasCondition) and alertEnabled
+
+// Avoid - Ambiguous
+isStalling = movementRatio < stallThreshold and volumeConfirm or not useFilter
+```
+
+### 6.5 Ternary Operator Usage
+
+Keep ternary operators readable:
+
+```pinescript
+// Good - Simple ternary
+color1 = isUptrend ? color.green : color.red
+
+// Good - Nested but grouped
+color2 = stallContext == 1 ? orangeColor : 
+         (stallContext == -1 ? purpleColor : neutralColor)
+
+// Avoid - Too complex
+result = condition1 ? value1 : condition2 ? value2 : condition3 ? value3 : value4
+```
+
+### 6.6 Series Subscript Operator
+
+Use `[n]` to reference historical values:
+
+```pinescript
+// Good
+priceChange = close - close[1]  // Previous bar
+wasStalling = isStalling[1]     // Previous state
+highestHigh = ta.highest(high, 20)  // Built-in for efficiency
+
+// Avoid manual loops when built-ins exist
+```
+
+---
+
+## 7. Visual Elements
+
+### 7.1 Plot Organization
+
+Organize plots logically:
+
+```pinescript
+// Main indicator plots
+plot(mainLine, "Main Signal", color=color.blue, linewidth=2)
+
+// Secondary plots
+plot(upperBand, "Upper", color=color.gray)
+plot(lowerBand, "Lower", color=color.gray)
+
+// Reference lines
+hline(0, "Zero Line", color=color.gray, linestyle=hline.style_dashed)
+
+// Fills (after related plots)
+fill(upperPlot, lowerPlot, color=color.new(color.blue, 90))
+```
+
+### 7.2 Color Management
+
+Define colors once, reuse throughout:
+
+```pinescript
+// Color definitions
+orangeColor = input.color(color.new(#FF8000, 0), "Uptrend Color", group="Colors")
+purpleColor = input.color(color.new(#8000FF, 0), "Downtrend Color", group="Colors")
+neutralColor = input.color(color.new(#808080, 0), "Neutral Color", group="Colors")
+
+// Reuse colors
+barColor = isUptrend ? orangeColor : purpleColor
+plotshape(signal, color=orangeColor)
+table.cell(tbl, 0, 0, "Status", text_color=orangeColor)
+```
+
+### 7.3 Plot Styles
+
+Use appropriate plot styles:
+
+```pinescript
+// Line plots
+plot(sma, "SMA", color=color.blue, linewidth=1)
+
+// Columns (histogram)
+plot(histogram, "Histogram", style=plot.style_columns, color=histColor)
+
+// Circles (for discrete signals)
+plot(signal, "Signal", style=plot.style_circles, linewidth=3)
+
+// Area
+plot(filled, "Area", style=plot.style_area, color=color.new(color.blue, 80))
+```
+
+### 7.4 Shapes and Markers
+
+Use shapes sparingly and meaningfully:
+
+```pinescript
+// Signal markers
+plotshape(buySignal, style=shape.triangleup, location=location.belowbar, 
+          color=color.green, size=size.small, title="Buy")
+plotshape(sellSignal, style=shape.triangledown, location=location.abovebar, 
+          color=color.red, size=size.small, title="Sell")
+
+// Avoid overusing - too many markers clutter the chart
+```
+
+### 7.5 Tables
+
+Design readable tables:
+
+```pinescript
+// Good - Clean, organized table
+if barstate.islast
+    var table tbl = table.new(position.top_right, 2, 3, 
+                               bgcolor=color.new(color.white, 95), 
+                               border_width=2)
+    
+    // Header
+    table.cell(tbl, 0, 0, "Metric", bgcolor=color.gray, text_color=color.white)
+    table.cell(tbl, 1, 0, "Value", bgcolor=color.gray, text_color=color.white)
+    
+    // Data rows
+    table.cell(tbl, 0, 1, "ATR", text_color=color.black)
+    table.cell(tbl, 1, 1, str.tostring(atrValue, "#.##"), text_color=color.black)
+    
+    table.cell(tbl, 0, 2, "Status", text_color=color.black)
+    table.cell(tbl, 1, 2, statusText, text_color=statusColor)
+```
+
+### 7.6 Labels
+
+Manage labels properly to avoid memory issues:
+
+```pinescript
+// Good - Delete old labels
+var label myLabel = na
+if condition
+    label.delete(myLabel)
+    myLabel := label.new(bar_index, high, "Text", 
+                          style=label.style_label_down, 
+                          color=color.yellow)
+
+// Avoid - Creates new label every bar (memory leak)
+if condition
+    label.new(bar_index, high, "Text")  // Never deleted
+```
+
+---
+
+## 8. Performance & Efficiency
+
+### 8.1 Use of `var` Keyword
+
+Use `var` for values that don't recalculate on every bar:
+
+```pinescript
+// Good - Initialized once
+var int signalCount = 0
+var float maxPrice = 0.0
+var table infoTable = table.new(position.top_right, 2, 2)
+
+// Update when needed
+if condition
+    signalCount := signalCount + 1
+
+// Avoid - Recalculates every bar unnecessarily
+signalCount = 0  // Reset every bar (wrong)
+```
+
+### 8.2 Avoid Unnecessary Calculations
+
+Don't recalculate constants:
+
+```pinescript
+// Good - Calculate once
+lookbackBars = 20
+avgPrice = ta.sma(close, lookbackBars)
+
+// Avoid - Recalculates 20 every bar
+avgPrice = ta.sma(close, 20)  // OK for constants, but use variable for clarity
+```
+
+### 8.3 Conditional Calculations
+
+Only calculate what's needed:
+
+```pinescript
+// Good - Only calculate if needed
+if showIndicator
+    value = complexCalculation()
+    plot(value, "Indicator")
+
+// Avoid - Always calculates even if not used
+value = complexCalculation()
+if showIndicator
+    plot(value, "Indicator")
+```
+
+### 8.4 Series Operations
+
+Use built-in functions when available:
+
+```pinescript
+// Good - Efficient built-in
+highest = ta.highest(high, 20)
+sma = ta.sma(close, 20)
+
+// Avoid - Manual loops (Pine Script doesn't support traditional loops well)
+```
+
+### 8.5 Request Security (Multi-Timeframe)
+
+Use multi-timeframe cautiously:
+
+```pinescript
+// Good - Only when necessary, with security check
+htfData = request.security(syminfo.tickerid, "D", close)
+
+// Note: Can cause repainting and performance issues
+// Consider using request.security_lower_tf for intrabar data
+```
+
+---
+
+## 9. Error Handling
+
+### 9.1 Input Validation
+
+Validate inputs don't create logical errors:
+
+```pinescript
+// Good
+fastLength = input.int(12, "Fast Length", minval=1, maxval=50)
+slowLength = input.int(26, "Slow Length", minval=1, maxval=200)
+
+// Additional validation
+if fastLength >= slowLength
+    runtime.error("Fast length must be less than slow length")
+```
+
+### 9.2 Range Checks
+
+Ensure values stay within expected ranges:
+
+```pinescript
+// Good
+normalizedValue = math.min(math.max(rawValue, 0), 100)  // Clamp to 0-100
+
+// Check before using
+if atrValue > 0 and movementRatio > 0
+    result = calculation()
+```
+
+### 9.3 Historical Data Availability
+
+Check sufficient data exists:
+
+```pinescript
+// Good
+hasData = bar_index >= lookbackPeriod
+indicatorValue = hasData ? calculation() : na
+
+// Plot only when valid
+plot(hasData ? indicatorValue : na, "Indicator")
+```
+
+### 9.4 Type Safety
+
+Be aware of type conversions:
+
+```pinescript
+// Good - Explicit conversion
+intValue = int(floatValue)
+stringValue = str.tostring(numericValue, "#.##")
+
+// Aware of series types
+seriesValue = close  // series float
+constValue = 100     // const int
+```
+
+---
+
+## 10. Testing & Maintenance
+
+### 10.1 Version Control
+
+Use clear version numbering:
+
+```pinescript
+// REVISION HISTORY:
+// R1.0 - Initial release
+// R1.1 - Bug fixes
+// R1.2 - Minor enhancements
+// R2.0 - Major feature addition
+```
+
+### 10.2 Backward Compatibility
+
+When updating, consider existing users:
+
+```pinescript
+// Good - Add new features as optional
+useNewFeature = input.bool(false, "Use New Feature (Experimental)", group="Advanced")
+
+if useNewFeature
+    // New calculation
+else
+    // Original calculation (default)
+```
+
+### 10.3 Testing Checklist
+
+Before releasing, verify:
+
+- [ ] Compiles without errors
+- [ ] Works on different timeframes
+- [ ] Handles low-liquidity assets
+- [ ] No memory leaks (labels/lines deleted)
+- [ ] Alerts function correctly
+- [ ] Settings validated (min/max)
+- [ ] Clear on different chart themes
+- [ ] Tooltips are helpful
+- [ ] No runtime errors on early bars
+
+### 10.4 Settings Presets
+
+Document common use cases:
+
+```pinescript
+// ============================================================================
+// RECOMMENDED SETTINGS
+// 
+// Conservative (fewer signals):
+//   - Stall Threshold: 0.25
+//   - Confirmation Bars: 3
+//   - Volume Threshold: 0.6
+//
+// Moderate (balanced):
+//   - Stall Threshold: 0.35 (default)
+//   - Confirmation Bars: 1
+//   - Volume Threshold: 0.7 (default)
+//
+// Aggressive (more signals):
+//   - Stall Threshold: 0.45
+//   - Confirmation Bars: 1
+//   - Volume Threshold: 0.8
+// ============================================================================
+```
+
+### 10.5 Debugging Techniques
+
+Use plotchar for debugging:
+
+```pinescript
+// Debug output (remove in production)
+plotchar(condition, "Debug", "●", location.top, color.yellow, size=size.tiny)
+plot(debugValue, "Debug Value", color=color.fuchsia, display=display.data_window)
+```
+
+---
+
+## Summary: Quick Reference Checklist
+
+### File Structure
+- [ ] Version declaration at top
+- [ ] Copyright and description
+- [ ] Clear section dividers
+- [ ] Inputs grouped logically
+- [ ] Calculations before visuals
+- [ ] END OF INDICATOR comment
+
+### Code Quality
+- [ ] CamelCase variable naming
+- [ ] Boolean prefixes (is, has, should)
+- [ ] No division by zero
+- [ ] NA value handling
+- [ ] `var` for persistent state
+- [ ] Comments explain "why" not "what"
+
+### User Experience
+- [ ] Input parameters grouped
+- [ ] Tooltips on all inputs
+- [ ] Sensible defaults
+- [ ] Min/max validation
+- [ ] Colors customizable
+
+### Performance
+- [ ] No unnecessary calculations
+- [ ] Built-in functions used
+- [ ] Labels/lines deleted
+- [ ] Conditional plot logic
+
+### Visual Design
+- [ ] Colors defined once
+- [ ] Appropriate plot styles
+- [ ] Shapes used sparingly
+- [ ] Tables clean and readable
+- [ ] Works on light/dark themes
+
+---
+
+**End of Pine Script Best Practices Guide**
+
+*Copyright © 2025 Bulldog Ventures Inc. All rights reserved.*
+
