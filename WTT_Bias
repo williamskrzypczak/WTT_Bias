@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias", "WTT_Bias", overlay=false)
+indicator("WTT_Bias R1.24", "WTT_Bias R1.24", overlay=true)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,48 @@ indicator("WTT_Bias", "WTT_Bias", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.24 - Enhanced visual aesthetics
+//        - Incorporated revision number into indicator name
+//        - Histogram uses darker colors for stronger bias and lighter colors for weaker bias
+//        - Strong bias bars: dark green (bullish) / dark gray (bearish)
+//        - Weak bias bars: light green (bullish) / light gray (bearish)
+//        - Changed triangle markers to diamond shapes for sleeker appearance
+//        - Added Histogram Intensity Multiplier input parameter
+//        - Renamed Triangle Color to Zero-Cross Marker Color for clarity
+//        - Signal line now uses lime/reddish-pink colors for quick recognition
+//        - Added intensity decrease dots on signal line (dots appear when bias moves from stronger to weaker)
+//        - Diamond markers kept at small size for clean appearance
+// R1.23 - Marigold orange triangles
+//        - Added Triangle Color (default Marigold #FFBF00) and applied to markers
+// R1.22 - Alerts include symbol
+//        - Added currency pair (symbol) to alert messages
+// R1.21 - Yellow triangles for zero-cross
+//        - Triangles now use Zero Color (yellow)
+// R1.20 - Restored triangle markers on histogram
+//        - Replaced text 0^/0v labels with triangle shapes at bias value
+// R1.19 - Default: Histogram ON
+//        - Enabled bias histogram by default
+// R1.18 - Configurable zero-cross text size
+//        - Added "Zero Text Size" setting (Tiny–Huge)
+// R1.17 - Text-only zero-cross markers
+//        - Replaced triangle shapes with yellow text labels (0^ / 0v)
+// R1.16 - Reliable, de-duplicated alerts
+//        - Added option to alert on bar close (default)
+//        - Ensure one alert per bar; prioritize zero-cross events
+// R1.15 - Yellow text for 0↑/0↓ markers
+//        - Added configurable Zero Text Color (default yellow)
+// R1.14 - Yellow zero bars in histogram
+//        - Added configurable Zero Color (default yellow)
+// R1.13 - Triangles on price chart; histogram off by default
+//        - Switched to overlay on main price chart
+//        - Disabled histogram/signal line by default to show only markers
+// R1.12 - Added zero-cross chart markers
+//        - Optional triangles on price chart when bias crosses zero
+//        - Toggle via "Show Zero-Cross Markers" in Visual Settings
+// R1.11 - Changed default table setting
+//        - Set default for "Show Info Table" to false (off)
+//        - Users can enable table display if desired
+//        - Cleaner default appearance
 // R1.10 - Updated bearish color
 //        - Changed bearish color from purple to gray
 //        - Maintains teal for bullish and gray for bearish/neutral
@@ -114,16 +156,42 @@ showHistogram = input.bool(
      tooltip="Show bias as a histogram from -1 to +1.")
 
 showSignalLine = input.bool(
-     defval=true,
+     defval=false,
      title="Show Signal Line",
      group="Visual Settings",
      tooltip="Plot the smoothed bias as a line over the histogram.")
 
 showInfoTable = input.bool(
-     defval=true,
+     defval=false,
      title="Show Info Table (last bar)",
      group="Visual Settings",
      tooltip="Display a compact table with upticks/downticks and buy/sell volume on the last bar.")
+
+showZeroCrossMarkers = input.bool(
+     defval=true,
+     title="Show Zero-Cross Markers",
+     group="Visual Settings",
+     tooltip="Plot chart markers when the bias crosses the zero line.")
+
+showIntensityDecreaseDots = input.bool(
+     defval=true,
+     title="Show Intensity Decrease Dots",
+     group="Visual Settings",
+     tooltip="Plot dots on signal line when bias intensity decreases (stronger to weaker).")
+
+zeroTextSizeOption = input.string(
+     defval="Normal",
+     title="Zero Text Size",
+     options=["Tiny", "Small", "Normal", "Large", "Huge"],
+     group="Visual Settings",
+     tooltip="Controls the font size of the 0^ / 0v labels on the chart.")
+
+// Group: Alert Settings
+alertOnBarClose = input.bool(
+     defval=true,
+     title="Alerts on Bar Close (More Reliable)",
+     group="Alert Settings",
+     tooltip="When enabled, alerts trigger once per bar at close using the final values, reducing missed triggers.")
 
 // Group: Colors
 bullishColor = input.color(
@@ -141,6 +209,22 @@ neutralColor = input.color(
      title="Neutral Color",
      group="Colors")
 
+zeroColor = input.color(
+     defval=color.new(color.yellow, 0),
+     title="Zero Color",
+     group="Colors")
+
+zeroTextColor = input.color(
+     defval=color.new(color.yellow, 0),
+     title="Zero Text Color",
+     group="Colors")
+
+markerColor = input.color(
+     defval=color.new(color.rgb(255, 191, 0), 0),
+     title="Zero-Cross Marker Color (Marigold)",
+     group="Colors",
+     tooltip="Color for diamond markers that appear when bias crosses zero.")
+
 histTransparency = input.int(
      defval=10,
      title="Histogram Transparency (0-100)",
@@ -152,6 +236,13 @@ lineTransparency = input.int(
      title="Line Transparency (0-100)",
      minval=0, maxval=100,
      group="Colors")
+
+intensityMultiplier = input.int(
+     defval=60,
+     title="Histogram Intensity Multiplier",
+     minval=0, maxval=100,
+     group="Colors",
+     tooltip="Controls how much transparency varies with bias strength. Higher values = stronger bias becomes more opaque. Lower values = subtle effect.")
 
 // ============================================================================
 // CALCULATIONS - REALTIME PROXY (LAST BAR)
@@ -264,13 +355,51 @@ smoothedBias = ta.sma(biased, smoothLength)
 // Visual colors
 biasColor = smoothedBias > 0 ? bullishColor : smoothedBias < 0 ? bearishColor : neutralColor
 
+// Calculate bias intensity for dynamic color darkness
+// Stronger bias = darker colors (less transparency = darker/more solid)
+// Weaker bias = lighter colors (more transparency = lighter/more faded)
+biasIntensity = math.abs(smoothedBias)
+
+// Calculate transparency based on bias strength
+// Strong bias (near ±1.0) → low transparency (dark green/gray)
+// Weak bias (near 0) → high transparency (light green/gray)
+// Formula: darkness increases with bias strength
+// Maximum lightness for weakest bias (high transparency ~55-60)
+// Minimum lightness for strongest bias (low transparency ~0-10)
+maxLightness = 60  // Maximum transparency for weakest bias (reduced for more intensity)
+effectiveTransparency = smoothedBias == 0 ? histTransparency : 
+          math.max(0, math.min(100, maxLightness * (1 - biasIntensity)))
+
+// Get base color for histogram
+histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
+histogramColor = color.new(histogramBaseColor, effectiveTransparency)
+
 // ============================================================================
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
 plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns,
-     color=color.new(biasColor, histTransparency))
-plot(showSignalLine ? smoothedBias : na, "Signal", color=color.new(color.white, lineTransparency), linewidth=2)
+     color=smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor)
+// Signal line with lime/reddish-pink for quick directional recognition
+signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) :  // Lime
+                  smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) :  // Reddish-pink
+                  color.new(color.gray, lineTransparency)
+plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
+
+// Detect when bias intensity decreases (stronger to weaker)
+previousBiasIntensity = math.abs(smoothedBias[1])
+currentBiasIntensity = math.abs(smoothedBias)
+intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(previousBiasIntensity)
+
+// Plot dot on signal line when intensity decreases
+plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na,
+     title="Intensity Decrease Dot",
+     style=shape.circle,
+     location=location.absolute,
+     color=signalLineColor,
+     size=size.tiny)
+
+// Zero-cross visual markers will be plotted after zero-cross detection
 
 // ============================================================================
 // TABLE (REAL-TIME DATA)
@@ -308,24 +437,38 @@ if showInfoTable and barstate.islast
     table.cell(biasInfoTable, 0, 4, "Bias", text_color=color.white)
     table.cell(biasInfoTable, 1, 4, str.tostring(smoothedBias, "#.###"), text_color=biasColor)
 
-// ============================================================================
+// =========================================================================
 // ALERTS
-// ============================================================================
+// =========================================================================
 turnedBullish = ta.crossover(smoothedBias, alertThreshold)
 turnedBearish = ta.crossunder(smoothedBias, -alertThreshold)
 flippedBull = ta.crossover(smoothedBias, 0.0)
 flippedBear = ta.crossunder(smoothedBias, 0.0)
 
-if turnedBullish
-    alert("WTT_Bias: Bias crossed above +" + str.tostring(alertThreshold), alert.freq_once_per_bar)
+// Zero-cross visual markers (diamond shapes at bias level on histogram)
+bullFlipSignal = showZeroCrossMarkers and flippedBull
+bearFlipSignal = showZeroCrossMarkers and flippedBear
 
-if turnedBearish
-    alert("WTT_Bias: Bias crossed below -" + str.tostring(alertThreshold), alert.freq_once_per_bar)
+plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up",
+     style=shape.diamond, location=location.absolute,
+     color=markerColor, size=size.small)
 
-if flippedBull
-    alert("WTT_Bias: Bias flipped above 0", alert.freq_once_per_bar)
+plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down",
+     style=shape.diamond, location=location.absolute,
+     color=markerColor, size=size.small)
 
-if flippedBear
-    alert("WTT_Bias: Bias flipped below 0", alert.freq_once_per_bar)
+// Emit at most one alert per bar with priority: zero-cross > threshold
+shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
+if shouldEvaluateNow
+    string alertMsg = na
+    if flippedBull
+        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias flipped above 0"
+    else if flippedBear
+        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias flipped below 0"
+    else if turnedBullish
+        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed above +" + str.tostring(alertThreshold)
+    else if turnedBearish
+        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed below -" + str.tostring(alertThreshold)
 
-// // END OF INDICATOR
+    if not na(alertMsg)
+        alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
