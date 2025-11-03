@@ -12,12 +12,12 @@ indicator("WTT_Bias R1.24", "WTT_Bias R1.24", overlay=true)
 //        - Histogram uses darker colors for stronger bias and lighter colors for weaker bias
 //        - Strong bias bars: dark green (bullish) / dark gray (bearish)
 //        - Weak bias bars: light green (bullish) / light gray (bearish)
-//        - Changed triangle markers to diamond shapes for sleeker appearance
+//        - Zero-cross markers use triangle shapes (up/down) in small size
 //        - Added Histogram Intensity Multiplier input parameter
 //        - Renamed Triangle Color to Zero-Cross Marker Color for clarity
 //        - Signal line now uses lime/reddish-pink colors for quick recognition
 //        - Added intensity decrease dots on signal line (dots appear when bias moves from stronger to weaker)
-//        - Diamond markers kept at small size for clean appearance
+//        - Triangle markers set to small size for clear visibility
 // R1.23 - Marigold orange triangles
 //        - Added Triangle Color (default Marigold #FFBF00) and applied to markers
 // R1.22 - Alerts include symbol
@@ -445,16 +445,16 @@ turnedBearish = ta.crossunder(smoothedBias, -alertThreshold)
 flippedBull = ta.crossover(smoothedBias, 0.0)
 flippedBear = ta.crossunder(smoothedBias, 0.0)
 
-// Zero-cross visual markers (diamond shapes at bias level on histogram)
+// Zero-cross visual markers (triangle shapes at bias level on histogram)
 bullFlipSignal = showZeroCrossMarkers and flippedBull
 bearFlipSignal = showZeroCrossMarkers and flippedBear
 
 plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up",
-     style=shape.diamond, location=location.absolute,
+     style=shape.triangleup, location=location.absolute,
      color=markerColor, size=size.small)
 
 plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down",
-     style=shape.diamond, location=location.absolute,
+     style=shape.triangledown, location=location.absolute,
      color=markerColor, size=size.small)
 
 // Emit at most one alert per bar with priority: zero-cross > threshold
