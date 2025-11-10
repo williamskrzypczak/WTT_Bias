@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.24", "WTT_Bias R1.24", overlay=true)
+indicator("WTT_Bias R1.25", "WTT_Bias R1.25", overlay=true)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,15 @@ indicator("WTT_Bias R1.24", "WTT_Bias R1.24", overlay=true)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.25 - Enhanced bias meter table and improved reliability
+//        - Added "Directional Bias" title row to bias meter table
+//        - Changed "SHORTS" to "SHORT" and "LONGS" to "LONG" for cleaner labels
+//        - Changed neutral marker from "N" to "NEUTRAL" for clarity
+//        - Changed center cell background to lower intensity yellow (75% transparency)
+//        - Changed center cell text color to black for better contrast against yellow background
+//        - Reduced title text size to small for more compact table display
+//        - Added robust state reset mechanism using bar_index as fallback when barstate.isnew fails
+//        - This prevents histogram update issues after extended chart sessions
 // R1.24 - Enhanced visual aesthetics with analog bias meter
 //        - Incorporated revision number into indicator name
 //        - Histogram uses darker colors for stronger bias and lighter colors for weaker bias
@@ -238,15 +247,20 @@ var float buyVolume = 0.0
 var float sellVolume = 0.0
 var float lastCloseRt = na
 var float lastVolumeRt = na
+var int lastBarIndex = na
+var float lastEvaluatedBias = na
 
-// Reset counters at the start of each new bar
-if barstate.isnew
+// Robust reset: check both barstate.isnew and bar_index change for reliability
+// This handles cases where barstate detection might fail after extended sessions
+isNewBar = barstate.isnew or (not na(lastBarIndex) and bar_index != lastBarIndex)
+if isNewBar
     upTickCount := 0
     downTickCount := 0
     buyVolume := 0.0
     sellVolume := 0.0
     lastCloseRt := close
     lastVolumeRt := volume
+    lastBarIndex := bar_index
 
 // On each realtime update of current bar, classify uptick/downtick and allocate volume delta
 if barstate.isrealtime
@@ -355,6 +369,13 @@ effectiveTransparency = smoothedBias == 0 ? histTransparency :
 histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
 histogramColor = color.new(histogramBaseColor, effectiveTransparency)
 
+// Track bias transitions using last evaluated value for alert/table alignment
+previousEvaluatedBias = na(lastEvaluatedBias) ? nz(smoothedBias[1]) : lastEvaluatedBias
+flippedBull = previousEvaluatedBias <= 0 and smoothedBias > 0
+flippedBear = previousEvaluatedBias >= 0 and smoothedBias < 0
+turnedBullish = previousEvaluatedBias <= alertThreshold and smoothedBias > alertThreshold
+turnedBearish = previousEvaluatedBias >= -alertThreshold and smoothedBias < -alertThreshold
+
 // ============================================================================
 // VISUAL ELEMENTS
 // ============================================================================
@@ -391,8 +412,8 @@ if showBiasMeter and barstate.islast
     if not na(biasMeterTable)
         table.delete(biasMeterTable)
     
-    // Create meter table: 9 columns (4 shorts + 1 center + 4 longs), 2 rows
-    biasMeterTable := table.new(position.bottom_right, 9, 2, bgcolor=color.new(color.white, 50), border_width=0)
+    // Create meter table: 9 columns (4 shorts + 1 center + 4 longs), 3 rows
+    biasMeterTable := table.new(position.bottom_right, 9, 3, bgcolor=color.new(color.white, 50), border_width=0)
     
     // Convert smoothedBias (-1.0 to +1.0) to segment index (0-8)
     // Segment mapping: 0-3 = shorts (strong to weak), 4 = center, 5-8 = longs (weak to strong)
@@ -416,28 +437,39 @@ if showBiasMeter and barstate.islast
     intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(previousBiasIntensity)
     
     // Determine triangle marker and intensity dot
-    baseMarker = isShortsBias ? "▼" : isLongsBias ? "▲" : "N"
+    baseMarker = isShortsBias ? "▼" : isLongsBias ? "▲" : "NEUTRAL"
     intensityDot = "●"  // Dot to show when intensity decreases
     // When intensity decreases, reverse the arrow and place it after the dot
     reversedMarker = baseMarker == "▼" ? "▲" : baseMarker == "▲" ? "▼" : baseMarker
     
-    // Row 0: Labels row - black background, highlight current bias direction
-    shortsLabelText = isShortsBias ? color.white : color.red
-    table.cell(biasMeterTable, 0, 0, "SHORTS", bgcolor=color.black, text_color=shortsLabelText, text_size=size.small, text_halign=text.align_left)
+    // Row 0: Title row - "Directional Bias"
+    table.cell(biasMeterTable, 0, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 1, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 2, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 3, 0, "", bgcolor=color.black)  // Empty cell
-    
-    centerLabelText = isNeutralBias ? color.white : color.gray
-    table.cell(biasMeterTable, 4, 0, "0", bgcolor=color.black, text_color=centerLabelText, text_size=size.small, text_halign=text.align_center)
-    
+    table.cell(biasMeterTable, 4, 0, "Directional Bias", bgcolor=color.black, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     table.cell(biasMeterTable, 5, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 6, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 7, 0, "", bgcolor=color.black)  // Empty cell
-    longsLabelText = isLongsBias ? color.white : color.green
-    table.cell(biasMeterTable, 8, 0, "LONGS", bgcolor=color.black, text_color=longsLabelText, text_size=size.small, text_halign=text.align_right)
+    table.cell(biasMeterTable, 8, 0, "", bgcolor=color.black)  // Empty cell
     
-    // Row 1: Red-green gradient matching histogram intensity exactly
+    // Row 1: Labels row - black background, highlight current bias direction
+    shortsLabelText = isShortsBias ? color.white : color.red
+    table.cell(biasMeterTable, 0, 1, "SHORT", bgcolor=color.black, text_color=shortsLabelText, text_size=size.small, text_halign=text.align_left)
+    table.cell(biasMeterTable, 1, 1, "", bgcolor=color.black)  // Empty cell
+    table.cell(biasMeterTable, 2, 1, "", bgcolor=color.black)  // Empty cell
+    table.cell(biasMeterTable, 3, 1, "", bgcolor=color.black)  // Empty cell
+    
+    centerLabelText = isNeutralBias ? color.white : color.gray
+    table.cell(biasMeterTable, 4, 1, "0", bgcolor=color.black, text_color=centerLabelText, text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(biasMeterTable, 5, 1, "", bgcolor=color.black)  // Empty cell
+    table.cell(biasMeterTable, 6, 1, "", bgcolor=color.black)  // Empty cell
+    table.cell(biasMeterTable, 7, 1, "", bgcolor=color.black)  // Empty cell
+    longsLabelText = isLongsBias ? color.white : color.green
+    table.cell(biasMeterTable, 8, 1, "LONG", bgcolor=color.black, text_color=longsLabelText, text_size=size.small, text_halign=text.align_right)
+    
+    // Row 2: Red-green gradient matching histogram intensity exactly
     // Use exact same intensity calculation as histogram bars
     maxLightness = 60  // Same as histogram
     
@@ -463,78 +495,70 @@ if showBiasMeter and barstate.islast
     seg0Active = normalizedBias < -0.75
     seg0RgbValue = seg0Active ? int(255 * currentRgbIntensity) : 0
     seg0Color = seg0Active ? color.rgb(seg0RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 0, 1, "", bgcolor=seg0Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 0, 2, "", bgcolor=seg0Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 1: Strong shorts - uses current bar when bias < -0.5
     seg1Active = normalizedBias < -0.5
     seg1RgbValue = seg1Active ? int(255 * currentRgbIntensity) : 0
     seg1Color = seg1Active ? color.rgb(seg1RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 1, 1, "", bgcolor=seg1Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 1, 2, "", bgcolor=seg1Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 2: Medium shorts - uses previous bar when bias < -0.25
     seg2Active = normalizedBias < -0.25
     seg2RgbValue = seg2Active ? int(255 * previousRgbIntensity) : 0
     seg2Color = seg2Active ? color.rgb(seg2RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 2, 1, "", bgcolor=seg2Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 2, 2, "", bgcolor=seg2Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 3: Weak shorts - uses previous bar when bias < -0.1
     seg3Active = normalizedBias < -0.1
     seg3RgbValue = seg3Active ? int(255 * previousRgbIntensity) : 0
     seg3Color = seg3Active ? color.rgb(seg3RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 3, 1, "", bgcolor=seg3Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 3, 2, "", bgcolor=seg3Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
-    // Segment 4: Center - matches histogram, shows zero-cross triangle when it occurs
+    // Segment 4: Center - shows zero-cross triangle when it occurs
     centerActive = math.abs(normalizedBias) <= 0.1 or segmentIndex == 4
-    // For center, use histogram color logic with current bar intensity
-    histogramBaseColor = normalizedBias == 0 ? zeroColor : (normalizedBias > 0 ? bullishColor : bearishColor)
-    centerSegColor = centerActive ? color.new(histogramBaseColor, currentHistTransparency) : color.black
+    // Use lower intensity yellow background for center cell
+    centerSegColor = centerActive ? color.new(color.yellow, 75) : color.black
     // Detect zero-cross for triangle marker in center cell (up triangle for bullish cross, down for bearish)
-    zeroCrossBull = ta.crossover(smoothedBias, 0.0)
-    zeroCrossBear = ta.crossunder(smoothedBias, 0.0)
+    zeroCrossBull = flippedBull
+    zeroCrossBear = flippedBear
     // Current bar marker (triangle or dot with intensity decrease indicator)
-    // When neutral, show "N" regardless of intensity change
-    currentBarMarker = isNeutralBias ? "N" : (intensityDecreased ? intensityDot + reversedMarker : baseMarker)
+    // When neutral, show "NEUTRAL" regardless of intensity change
+    currentBarMarker = isNeutralBias ? "NEUTRAL" : (intensityDecreased ? intensityDot + reversedMarker : baseMarker)
     // Show zero-cross triangle if it occurs, otherwise show current bar marker
     centerText = zeroCrossBull ? "▲" : zeroCrossBear ? "▼" : currentBarMarker
-    // Use signal line color for marker text to match histogram dot color
-    centerMarkerColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) : color.new(color.gray, lineTransparency)
-    // Use signal line color for markers, white for zero-cross triangles
-    centerTextColor = (zeroCrossBull or zeroCrossBear) ? color.white : centerMarkerColor
-    table.cell(biasMeterTable, 4, 1, centerText, bgcolor=centerSegColor, text_color=centerTextColor, text_size=size.small, text_halign=text.align_center)
+    // Use black text for better contrast against yellow background
+    centerTextColor = color.black
+    table.cell(biasMeterTable, 4, 2, centerText, bgcolor=centerSegColor, text_color=centerTextColor, text_size=size.small, text_halign=text.align_center)
     
     // Segments 5-8: Longs (green gradient) - fill from center outward
     // Segment 5: Weak longs - uses previous bar when bias > 0.1
     seg5Active = normalizedBias > 0.1
     seg5RgbValue = seg5Active ? int(255 * previousRgbIntensity) : 0
     seg5Color = seg5Active ? color.rgb(0, seg5RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 5, 1, "", bgcolor=seg5Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 5, 2, "", bgcolor=seg5Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 6: Medium longs - uses previous bar when bias > 0.25
     seg6Active = normalizedBias > 0.25
     seg6RgbValue = seg6Active ? int(255 * previousRgbIntensity) : 0
     seg6Color = seg6Active ? color.rgb(0, seg6RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 6, 1, "", bgcolor=seg6Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 6, 2, "", bgcolor=seg6Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 7: Strong longs - uses current bar when bias > 0.5
     seg7Active = normalizedBias > 0.5
     seg7RgbValue = seg7Active ? int(255 * currentRgbIntensity) : 0
     seg7Color = seg7Active ? color.rgb(0, seg7RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 7, 1, "", bgcolor=seg7Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 7, 2, "", bgcolor=seg7Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 8: Very strong longs (far right) - uses current bar when bias > 0.75
     seg8Active = normalizedBias > 0.75
     seg8RgbValue = seg8Active ? int(255 * currentRgbIntensity) : 0
     seg8Color = seg8Active ? color.rgb(0, seg8RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 8, 1, "", bgcolor=seg8Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 8, 2, "", bgcolor=seg8Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
 
 // =========================================================================
 // ALERTS
 // =========================================================================
-turnedBullish = ta.crossover(smoothedBias, alertThreshold)
-turnedBearish = ta.crossunder(smoothedBias, -alertThreshold)
-flippedBull = ta.crossover(smoothedBias, 0.0)
-flippedBear = ta.crossunder(smoothedBias, 0.0)
-
 // Zero-cross visual markers (triangle shapes at bias level on histogram)
 bullFlipSignal = showZeroCrossMarkers and flippedBull
 bearFlipSignal = showZeroCrossMarkers and flippedBear
@@ -562,3 +586,5 @@ if shouldEvaluateNow
 
     if not na(alertMsg)
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
+
+    lastEvaluatedBias := smoothedBias

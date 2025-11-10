@@ -855,10 +855,15 @@ Use plotchar for debugging:
 plotchar(condition, "Debug", "●", location.top, color.yellow, size=size.tiny)
 plot(debugValue, "Debug Value", color=color.fuchsia, display=display.data_window)
 ```
-
 ---
 
 ## Summary: Quick Reference Checklist
+
+### Workflow Rule
+- When the user says `update everything`, perform all of the following steps:
+  1. Update the revision history comment in the active Pine Script file to reflect only the revisions that should remain (keep all current entries unless the user specifies otherwise).
+  2. Save the Pine Script file locally.
+  3. Commit the changes and push them to the `main` branch of `https://github.com/williamskrzypczak/WTT_Bias`.
 
 ### File Structure
 - [ ] Version declaration at top
