@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.25", "WTT_Bias R1.25", overlay=true)
+indicator("WTT_Bias R1.26", "WTT_Bias R1.26", overlay=true)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,7 @@ indicator("WTT_Bias R1.25", "WTT_Bias R1.25", overlay=true)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.26 - Updated lower timeframe default to 10 minutes for finer historical bias resolution
 // R1.25 - Enhanced bias meter table and improved reliability
 //        - Added "Directional Bias" title row to bias meter table
 //        - Changed "SHORTS" to "SHORT" and "LONGS" to "LONG" for cleaner labels
@@ -134,7 +135,7 @@ sourceMode = input.string(
      tooltip="Auto: realtime proxy on the last (live) bar, lower timeframe aggregation on historical bars. Realtime only: realtime proxy on live bar, lower TF on historical bars. Lower TF only: always use lower timeframe aggregation.")
 
 lowerTf = input.timeframe(
-     defval="30",
+     defval="10",
      title="Lower Timeframe (for history)",
      group="Detection Settings",
      tooltip="Timeframe used to approximate intrabar buy/sell on historical bars. Set lower than your chart TF (e.g., 30 minutes).")
@@ -159,6 +160,12 @@ alertThreshold = input.float(
      minval=0.0, maxval=1.0, step=0.01,
      group="Detection Settings",
      tooltip="Trigger alerts when smoothed bias crosses above +threshold or below -threshold.")
+
+intensityAlertEnabled = input.bool(
+    defval=false,
+    title="Alert When Bias Intensity Weakens",
+    group="Detection Settings",
+    tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
 
 // Group: Visual Settings
 showHistogram = input.bool(
@@ -392,6 +399,12 @@ plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewi
 previousBiasIntensity = math.abs(smoothedBias[1])
 currentBiasIntensity = math.abs(smoothedBias)
 intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(previousBiasIntensity)
+intensityDirection = smoothedBias > 0 ? "bullish" : smoothedBias < 0 ? "bearish" : "neutral"
+intensityDescription = intensityDirection == "neutral"
+    ? "Neutral bias momentum compressing"
+    : intensityDirection == "bullish"
+        ? "Bullish momentum easing"
+        : "Bearish momentum easing"
 
 // Plot dot on signal line when intensity decreases
 plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na,
@@ -583,6 +596,8 @@ if shouldEvaluateNow
         alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed above +" + str.tostring(alertThreshold)
     else if turnedBearish
         alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed below -" + str.tostring(alertThreshold)
+    else if intensityAlertEnabled and intensityDecreased
+        alertMsg := "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
 
     if not na(alertMsg)
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)

@@ -532,6 +532,19 @@ highestHigh = ta.highest(high, 20)  // Built-in for efficiency
 // Avoid manual loops when built-ins exist
 ```
 
+### 6.7 Line Continuations
+
+Keep each statement on a single line; do not use backslash (`\`) line continuations:
+
+```pinescript
+// Good - Complete statement on one line
+totalRange = (high - low) + (close - open)
+
+// Avoid - Backslash line continuation
+totalRange = (high - low) + \
+    (close - open)
+```
+
 ---
 
 ## 7. Visual Elements
