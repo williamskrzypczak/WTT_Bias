@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.26", "WTT_Bias R1.26", overlay=true)
+indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=true)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,7 @@ indicator("WTT_Bias R1.26", "WTT_Bias R1.26", overlay=true)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.27 - Updated lower timeframe default to 5 minutes for faster historical bias sampling
 // R1.26 - Updated lower timeframe default to 10 minutes for finer historical bias resolution
 // R1.25 - Enhanced bias meter table and improved reliability
 //        - Added "Directional Bias" title row to bias meter table
@@ -135,7 +136,7 @@ sourceMode = input.string(
      tooltip="Auto: realtime proxy on the last (live) bar, lower timeframe aggregation on historical bars. Realtime only: realtime proxy on live bar, lower TF on historical bars. Lower TF only: always use lower timeframe aggregation.")
 
 lowerTf = input.timeframe(
-     defval="10",
+     defval="5",
      title="Lower Timeframe (for history)",
      group="Detection Settings",
      tooltip="Timeframe used to approximate intrabar buy/sell on historical bars. Set lower than your chart TF (e.g., 30 minutes).")
@@ -389,10 +390,11 @@ turnedBearish = previousEvaluatedBias >= -alertThreshold and smoothedBias < -ale
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
 plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns,
      color=smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor)
-// Signal line with lime/reddish-pink for quick directional recognition
-signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) :  // Lime
-                  smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) :  // Reddish-pink
-                  color.new(color.gray, lineTransparency)
+// Signal line with lime, reddish-pink, or gray for quick directional recognition
+signalLineColor =
+    smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) :
+    smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) :
+    color.new(color.gray, lineTransparency)
 plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
 
 // Detect when bias intensity decreases (stronger to weaker)
@@ -460,7 +462,7 @@ if showBiasMeter and barstate.islast
     table.cell(biasMeterTable, 1, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 2, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 3, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 4, 0, "Directional Bias", bgcolor=color.black, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    table.cell(biasMeterTable, 4, 0, "CDB", bgcolor=color.black, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     table.cell(biasMeterTable, 5, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 6, 0, "", bgcolor=color.black)  // Empty cell
     table.cell(biasMeterTable, 7, 0, "", bgcolor=color.black)  // Empty cell

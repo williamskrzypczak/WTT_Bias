@@ -12,7 +12,7 @@ WTT_Bias estimates intrabar directional pressure by comparing upticks to downtic
 
 ## Quick Start
 
-1. Add `WTT_Bias R1.26` to your chart on TradingView.
+1. Add `WTT_Bias R1.27` to your chart on TradingView.
 2. Keep the default `Detection Settings` unless you already have a lower timeframe preference.
 3. Enable or disable `Visual Settings` elements (histogram, signal line, bias meter, zero-cross markers) based on how much on-chart detail you want.
 4. Configure alerts by selecting the built-in alert conditions after adding the script; set a frequency (close or intrabar) that matches your workflow.
@@ -32,7 +32,7 @@ WTT_Bias estimates intrabar directional pressure by comparing upticks to downtic
   - **Auto (Realtime+History)** (default) uses realtime proxy for the live bar and lower timeframe aggregation historically.
   - **Realtime only** keeps realtime proxy on the live bar and lower timeframe aggregation for history.
   - **Lower TF only** always uses the specified lower timeframe aggregation.
-- `Lower Timeframe (for history)`: Pick a timeframe below your chart TF (default `10` minutes) to approximate intrabar bias on historical bars.
+- `Lower Timeframe (for history)`: Pick a timeframe below your chart TF (default `5` minutes) to approximate intrabar bias on historical bars.
 - `Neutral Deadband`: Suppresses small oscillations around zero by treating values within ±deadband as neutral (default `0.05`).
 - `Smoothing Length`: Simple moving average length applied after deadbanding (default `3`).
 - `Alert Threshold`: Triggers alert conditions when smoothed bias crosses ±threshold (default `0.20`).
@@ -60,7 +60,7 @@ WTT_Bias estimates intrabar directional pressure by comparing upticks to downtic
 - **Intensity Decrease Dots**: Circle markers on the signal line flag when momentum softens from strong to weak.
 - **Zero-Cross Markers**: Triangle up/down markers at the zero line indicate bias flips; colors follow `Zero-Cross Marker Color`.
 - **Analog Bias Meter**:
-  - Title row reminds you the display reflects directional bias.
+  - Title row shows `CDB` (Cumulative Directional Bias) to highlight the current reading.
   - Middle row labels `SHORT`, `0`, and `LONG`, highlighting the active side.
   - Bottom row uses a red-to-green gradient (with neutral center cell) to represent current and prior bar intensity.
   - Center cell shows arrows or “NEUTRAL”; dots plus reversed arrows denote easing intensity; ▲/▼ replace text when a zero-cross occurs.
@@ -76,7 +76,7 @@ The indicator emits at most one alert per bar. Priority order:
 
 To use alerts:
 - Add the script to your chart and open TradingView’s `Alerts` dialog.
-- Choose `WTT_Bias R1.25` as the condition and select the desired event.
+- Choose `WTT_Bias R1.27` as the condition and select the desired event.
 - Set frequency consistent with the `Alerts on Bar Close` option.
 - Customize the message if needed (default includes the symbol and event).
 
@@ -103,7 +103,7 @@ To use alerts:
 
 ## Version Notes
 
-This guide covers features in `WTT_Bias R1.26`. Review the in-script revision history for detailed change notes when new releases ship.
+This guide covers features in `WTT_Bias R1.27`. Review the in-script revision history for detailed change notes when new releases ship.
 
 ---
 
