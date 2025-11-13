@@ -162,11 +162,7 @@ alertThreshold = input.float(
      group="Detection Settings",
      tooltip="Trigger alerts when smoothed bias crosses above +threshold or below -threshold.")
 
-intensityAlertEnabled = input.bool(
-    defval=false,
-    title="Alert When Bias Intensity Weakens",
-    group="Detection Settings",
-    tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
+intensityAlertEnabled = input.bool(defval=false, title="Alert When Bias Intensity Weakens", group="Detection Settings", tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
 
 // Group: Visual Settings
 showHistogram = input.bool(
@@ -388,13 +384,9 @@ turnedBearish = previousEvaluatedBias >= -alertThreshold and smoothedBias < -ale
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
-plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns,
-     color=smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor)
+plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns, color=smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor)
 // Signal line with lime, reddish-pink, or gray for quick directional recognition
-signalLineColor =
-    smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) :
-    smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) :
-    color.new(color.gray, lineTransparency)
+signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) : color.new(color.gray, lineTransparency)
 plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
 
 // Detect when bias intensity decreases (stronger to weaker)
@@ -402,19 +394,10 @@ previousBiasIntensity = math.abs(smoothedBias[1])
 currentBiasIntensity = math.abs(smoothedBias)
 intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(previousBiasIntensity)
 intensityDirection = smoothedBias > 0 ? "bullish" : smoothedBias < 0 ? "bearish" : "neutral"
-intensityDescription = intensityDirection == "neutral"
-    ? "Neutral bias momentum compressing"
-    : intensityDirection == "bullish"
-        ? "Bullish momentum easing"
-        : "Bearish momentum easing"
+intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum compressing" : intensityDirection == "bullish" ? "Bullish momentum easing" : "Bearish momentum easing"
 
 // Plot dot on signal line when intensity decreases
-plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na,
-     title="Intensity Decrease Dot",
-     style=shape.circle,
-     location=location.absolute,
-     color=signalLineColor,
-     size=size.tiny)
+plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.tiny)
 
 // Zero-cross visual markers will be plotted after zero-cross detection
 
@@ -438,8 +421,7 @@ if showBiasMeter and barstate.islast
     // -0.5 to -0.25 = 2 (medium shorts), -0.25 to -0.1 = 3 (weak shorts),
     // -0.1 to 0.1 = 4 (center), 0.1 to 0.25 = 5 (weak longs), 0.25 to 0.5 = 6 (medium longs),
     // 0.5 to 0.75 = 7 (strong longs), 0.75 to 1.0 = 8 (very strong longs)
-    segmentIndex = normalizedBias < -0.75 ? 0 : normalizedBias < -0.5 ? 1 : normalizedBias < -0.25 ? 2 : normalizedBias < -0.1 ? 3 : 
-                   math.abs(normalizedBias) <= 0.1 ? 4 : normalizedBias < 0.25 ? 5 : normalizedBias < 0.5 ? 6 : normalizedBias < 0.75 ? 7 : 8
+    segmentIndex = normalizedBias < -0.75 ? 0 : normalizedBias < -0.5 ? 1 : normalizedBias < -0.25 ? 2 : normalizedBias < -0.1 ? 3 : math.abs(normalizedBias) <= 0.1 ? 4 : normalizedBias < 0.25 ? 5 : normalizedBias < 0.5 ? 6 : normalizedBias < 0.75 ? 7 : 8
     
     // Determine current bias direction
     isShortsBias = normalizedBias < -0.1
@@ -578,13 +560,9 @@ if showBiasMeter and barstate.islast
 bullFlipSignal = showZeroCrossMarkers and flippedBull
 bearFlipSignal = showZeroCrossMarkers and flippedBear
 
-plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up",
-     style=shape.triangleup, location=location.absolute,
-     color=markerColor, size=size.small)
+plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up", style=shape.triangleup, location=location.absolute, color=markerColor, size=size.small)
 
-plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down",
-     style=shape.triangledown, location=location.absolute,
-     color=markerColor, size=size.small)
+plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down", style=shape.triangledown, location=location.absolute, color=markerColor, size=size.small)
 
 // Emit at most one alert per bar with priority: zero-cross > threshold
 shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
