@@ -556,13 +556,13 @@ if showBiasMeter and barstate.islast
 // =========================================================================
 // ALERTS
 // =========================================================================
-// Zero-cross visual markers (triangle shapes at bias level on histogram)
+// Zero-cross visual markers (diamond shapes at bias level on histogram)
 bullFlipSignal = showZeroCrossMarkers and flippedBull
 bearFlipSignal = showZeroCrossMarkers and flippedBear
 
-plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up", style=shape.triangleup, location=location.absolute, color=markerColor, size=size.small)
+plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up", style=shape.diamond, location=location.absolute, color=markerColor, size=size.tiny)
 
-plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down", style=shape.triangledown, location=location.absolute, color=markerColor, size=size.small)
+plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down", style=shape.diamond, location=location.absolute, color=markerColor, size=size.tiny)
 
 // Emit at most one alert per bar with priority: zero-cross > threshold
 shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
