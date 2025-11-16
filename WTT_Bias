@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=true)
+indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
