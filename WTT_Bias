@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=false)
+indicator("WTT_Bias R1.28", "WTT_Bias R1.28", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,11 @@ indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.28 - Integrated WTT Compression doji breakout detection
+//        - Added doji compression detection with configurable body threshold
+//        - Added bullish/bearish breakout markers on price chart
+//        - Added optional alerts for compression breakouts
+//        - Changed overlay back to true to support price chart markers
 // R1.27 - Updated lower timeframe default to 5 minutes for faster historical bias sampling
 // R1.26 - Updated lower timeframe default to 10 minutes for finer historical bias resolution
 // R1.25 - Enhanced bias meter table and improved reliability
@@ -110,11 +115,16 @@ indicator("WTT_Bias R1.27", "WTT_Bias R1.27", overlay=false)
 //       - Normalized bias oscillator (-1 to +1)
 //       - Optional info table and alerts
 //
-// This indicator approximates buy/sell (bid/ask) activity within the current
-// bar by classifying real-time close changes as upticks/downticks and
-// distributing the current bar's volume changes accordingly. Due to Pine
-// Script's lack of true order book access, this measures a proxy, not actual
-// bid/ask prints.
+// This indicator combines two powerful tools:
+// 1. Bias Detection: Approximates buy/sell (bid/ask) activity within the current
+//    bar by classifying real-time close changes as upticks/downticks and
+//    distributing the current bar's volume changes accordingly. Due to Pine
+//    Script's lack of true order book access, this measures a proxy, not actual
+//    bid/ask prints.
+// 2. Compression Detection: Highlights potential breakout momentum that follows
+//    indecision candles (dojis). When a doji appears, the script waits for the
+//    next bar to close beyond the doji's range and surfaces that breakout
+//    direction with markers on the price chart.
 // ============================================================================
 
 // ============================================================================
@@ -162,7 +172,7 @@ alertThreshold = input.float(
      group="Detection Settings",
      tooltip="Trigger alerts when smoothed bias crosses above +threshold or below -threshold.")
 
-intensityAlertEnabled = input.bool(defval=false, title="Alert When Bias Intensity Weakens", group="Detection Settings", tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
+intensityAlertEnabled = input.bool(defval=true, title="Alert When Bias Intensity Weakens", group="Detection Settings", tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
 
 // Group: Visual Settings
 showHistogram = input.bool(
@@ -172,7 +182,7 @@ showHistogram = input.bool(
      tooltip="Show bias as a histogram from -1 to +1.")
 
 showSignalLine = input.bool(
-     defval=false,
+     defval=true,
      title="Show Signal Line",
      group="Visual Settings",
      tooltip="Plot the smoothed bias as a line over the histogram.")
@@ -240,6 +250,16 @@ lineTransparency = input.int(
      title="Line Transparency (0-100)",
      minval=0, maxval=100,
      group="Colors")
+
+// Group: Compression Settings
+dojiBodyPercent = input.float(0.25, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.25 = body <= 25% of total range) for a candle to qualify as a doji.")
+requireCloseBreak = input.bool(true, "Require Close Breakout", group="Compression Settings", tooltip="When enabled, the breakout candle must close beyond the doji high/low. Disable to react on intrabar breaches.")
+confirmOnBarClose = input.bool(true, "Confirm Breakouts On Close", group="Compression Settings", tooltip="Wait for the bar to close before confirming breakout signals. Disable to allow intrabar alerts/markers that may disappear if price reverses.")
+showCompressionMarkers = input.bool(true, "Show Breakout Markers", group="Compression Settings", tooltip="Toggle display of the breakout triangles.")
+compressionUpColor = input.color(color.new(color.orange, 0), "Compression Uptrend Color", group="Compression Settings", tooltip="Marker color for bullish doji breakouts.")
+defaultPurple = color.rgb(128, 0, 255)
+compressionDownColor = input.color(color.new(defaultPurple, 0), "Compression Downtrend Color", group="Compression Settings", tooltip="Marker color for bearish doji breakouts.")
+enableCompressionAlerts = input.bool(true, "Enable Compression Alerts", group="Compression Settings", tooltip="Send an alert notification whenever a bullish or bearish doji breakout is detected.")
 
 // ============================================================================
 // CALCULATIONS - REALTIME PROXY (LAST BAR)
@@ -381,6 +401,26 @@ turnedBullish = previousEvaluatedBias <= alertThreshold and smoothedBias > alert
 turnedBearish = previousEvaluatedBias >= -alertThreshold and smoothedBias < -alertThreshold
 
 // ============================================================================
+// CALCULATIONS - COMPRESSION (DOJI BREAKOUT)
+// ============================================================================
+hasValidRange = not na(high) and not na(low) and high != low
+trueRange = hasValidRange ? high - low : na
+bodySize = not na(close) and not na(open) ? math.abs(close - open) : na
+isDoji = hasValidRange and not na(bodySize) and not na(trueRange) and trueRange > 0 and bodySize <= trueRange * dojiBodyPercent
+hasPriorBar = bar_index > 0
+wasDoji = hasPriorBar and nz(isDoji[1], false)
+hasPriorHighLow = hasPriorBar and not na(high[1]) and not na(low[1])
+closeBreaksUp = hasPriorHighLow and (requireCloseBreak ? close >= high[1] : high > high[1])
+closeBreaksDown = hasPriorHighLow and (requireCloseBreak ? close <= low[1] : low < low[1])
+isBullBreakout = wasDoji and closeBreaksUp
+isBearBreakout = wasDoji and closeBreaksDown
+isBarConfirmed = not confirmOnBarClose or barstate.isconfirmed
+isBullCompressionSignal = isBullBreakout and isBarConfirmed
+isBearCompressionSignal = isBearBreakout and isBarConfirmed
+bullCompressionAlertMessage = "WaveRider WTT Compression: Bullish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
+bearCompressionAlertMessage = "WaveRider WTT Compression: Bearish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
+
+// ============================================================================
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
@@ -398,6 +438,10 @@ intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum 
 
 // Plot dot on signal line when intensity decreases
 plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.tiny)
+
+// Compression breakout markers on price chart
+plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.tiny, color=compressionUpColor)
+plotshape(showCompressionMarkers and isBearCompressionSignal, title="Doji Breakout Down", style=shape.triangledown, location=location.abovebar, size=size.tiny, color=compressionDownColor)
 
 // Zero-cross visual markers will be plotted after zero-cross detection
 
@@ -583,3 +627,10 @@ if shouldEvaluateNow
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
 
     lastEvaluatedBias := smoothedBias
+
+// Compression breakout alerts
+if enableCompressionAlerts and isBullCompressionSignal
+    alert(bullCompressionAlertMessage, alert.freq_once_per_bar)
+
+if enableCompressionAlerts and isBearCompressionSignal
+    alert(bearCompressionAlertMessage, alert.freq_once_per_bar)
