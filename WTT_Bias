@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.30", "WTT_Bias R1.30", overlay=false)
+indicator("WTT_Bias R1.31", "WTT_Bias R1.31", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,16 @@ indicator("WTT_Bias R1.30", "WTT_Bias R1.30", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.31 - Code cleanup and color/transparency improvements
+//        - Removed unused alertThreshold input parameter (removed in R1.29)
+//        - Removed unused neutralColor input parameter
+//        - Simplified redundant centerActive logic in bias meter
+//        - Removed redundant zeroCrossBull/zeroCrossBear variable assignments
+//        - Removed unnecessary segmentIndex calculation
+//        - Fixed histogram transparency to respect histTransparency setting for all bias values
+//        - Changed bullish color from teal to lime green (RGB 50, 205, 50)
+//        - Changed bearish color from gray to white-ish (RGB 230, 230, 230)
+//        - Increased default histogram transparency from 10 to 35
 // R1.30 - Added pip value calculation and display
 //        - Added pip value calculation for forex currency pairs
 //        - Supports USD pairs (quote and base) and cross pairs
@@ -179,13 +189,6 @@ smoothLength = input.int(
      group="Detection Settings",
      tooltip="Simple moving average length applied to the bias after deadband.")
 
-alertThreshold = input.float(
-     defval=0.20,
-     title="Alert Threshold",
-     minval=0.0, maxval=1.0, step=0.01,
-     group="Detection Settings",
-     tooltip="Trigger alerts when smoothed bias crosses above +threshold or below -threshold.")
-
 intensityAlertEnabled = input.bool(defval=true, title="Alert When Bias Intensity Weakens", group="Detection Settings", tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
 
 // Group: Visual Settings
@@ -228,18 +231,13 @@ alertOnBarClose = input.bool(
 
 // Group: Colors
 bullishColor = input.color(
-     defval=color.new(color.teal, 0),
+     defval=color.new(color.rgb(50, 205, 50), 0),
      title="Bullish Color",
      group="Colors")
 
 bearishColor = input.color(
-     defval=color.new(color.gray, 0),
+     defval=color.new(color.rgb(230, 230, 230), 0),
      title="Bearish Color",
-     group="Colors")
-
-neutralColor = input.color(
-     defval=color.new(color.gray, 0),
-     title="Neutral Color",
      group="Colors")
 
 zeroColor = input.color(
@@ -254,7 +252,7 @@ markerColor = input.color(
      tooltip="Color for diamond markers that appear when bias crosses zero.")
 
 histTransparency = input.int(
-     defval=10,
+     defval=35,
      title="Histogram Transparency (0-100)",
      minval=0, maxval=100,
      group="Colors")
@@ -404,11 +402,11 @@ biasIntensity = math.abs(smoothedBias)
 // Strong bias (near ±1.0) → low transparency (dark green/gray)
 // Weak bias (near 0) → high transparency (light green/gray)
 // Formula: darkness increases with bias strength
-// Maximum lightness for weakest bias (high transparency ~55-60)
-// Minimum lightness for strongest bias (low transparency ~0-10)
-maxLightness = 60  // Maximum transparency for weakest bias (reduced for more intensity)
+// Base transparency from user setting, with intensity-based variation
+// Maximum transparency range: histTransparency (strong) to histTransparency + 50 (weak)
+maxLightnessRange = 50  // Additional transparency range for intensity variation
 effectiveTransparency = smoothedBias == 0 ? histTransparency : 
-          math.max(0, math.min(100, maxLightness * (1 - biasIntensity)))
+          math.max(0, math.min(100, histTransparency + (maxLightnessRange * (1 - biasIntensity))))
 
 // Get base color for histogram
 histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
@@ -517,15 +515,8 @@ if showBiasMeter and barstate.islast
     tableRows = showPipValue ? 4 : 3
     biasMeterTable := table.new(position.bottom_right, 9, tableRows, bgcolor=color.new(color.white, 50), border_width=0)
     
-    // Convert smoothedBias (-1.0 to +1.0) to segment index (0-8)
-    // Segment mapping: 0-3 = shorts (strong to weak), 4 = center, 5-8 = longs (weak to strong)
+    // Normalize bias to -1.0 to +1.0 range
     normalizedBias = math.max(-1.0, math.min(1.0, smoothedBias))
-    // Map bias to 9 segments: 
-    // -1.0 to -0.75 = 0 (very strong shorts), -0.75 to -0.5 = 1 (strong shorts),
-    // -0.5 to -0.25 = 2 (medium shorts), -0.25 to -0.1 = 3 (weak shorts),
-    // -0.1 to 0.1 = 4 (center), 0.1 to 0.25 = 5 (weak longs), 0.25 to 0.5 = 6 (medium longs),
-    // 0.5 to 0.75 = 7 (strong longs), 0.75 to 1.0 = 8 (very strong longs)
-    segmentIndex = normalizedBias < -0.75 ? 0 : normalizedBias < -0.5 ? 1 : normalizedBias < -0.25 ? 2 : normalizedBias < -0.1 ? 3 : math.abs(normalizedBias) <= 0.1 ? 4 : normalizedBias < 0.25 ? 5 : normalizedBias < 0.5 ? 6 : normalizedBias < 0.75 ? 7 : 8
     
     // Determine current bias direction
     isShortsBias = normalizedBias < -0.1
@@ -572,7 +563,7 @@ if showBiasMeter and barstate.islast
     
     // Row 2: Red-green gradient matching histogram intensity exactly
     // Use exact same intensity calculation as histogram bars
-    tableMaxLightness = 60  // Same as histogram
+    tableMaxLightnessRange = 50  // Same as histogram maxLightnessRange
     
     // Calculate histogram intensity for current and previous bars (matching histogram calculation)
     currentHistBiasIntensity = math.abs(smoothedBias)
@@ -580,16 +571,18 @@ if showBiasMeter and barstate.islast
     
     // Calculate histogram effective transparency (same as histogram bars)
     currentHistTransparency = smoothedBias == 0 ? histTransparency : 
-              math.max(0, math.min(100, tableMaxLightness * (1 - currentHistBiasIntensity)))
+              math.max(0, math.min(100, histTransparency + (tableMaxLightnessRange * (1 - currentHistBiasIntensity))))
     previousHistTransparency = not na(smoothedBias[1]) and smoothedBias[1] == 0 ? histTransparency : 
-              math.max(0, math.min(100, tableMaxLightness * (1 - previousHistBiasIntensity)))
+              math.max(0, math.min(100, histTransparency + (tableMaxLightnessRange * (1 - previousHistBiasIntensity))))
     
     // Map histogram transparency to RGB intensity
-    // Histogram: low transparency (0) = dark/intense, high transparency (60) = light/faded
+    // Histogram: low transparency = dark/intense, high transparency = light/faded
     // RGB: low transparency = high RGB (bright), high transparency = low RGB (dim)
-    // Invert transparency to get RGB intensity: RGB = 255 * (1 - transparency/60) mapped to 0.3-1.0 range for brighter visibility
-    currentRgbIntensity = 0.3 + (1.0 - currentHistTransparency / tableMaxLightness) * 0.7
-    previousRgbIntensity = not na(smoothedBias[1]) ? (0.3 + (1.0 - previousHistTransparency / tableMaxLightness) * 0.7) : 0.3
+    // Invert transparency to get RGB intensity: RGB = 255 * (1 - transparency/maxTransparency) mapped to 0.3-1.0 range for brighter visibility
+    // Use maximum possible transparency (histTransparency + range) for scaling
+    maxPossibleTransparency = histTransparency + tableMaxLightnessRange
+    currentRgbIntensity = 0.3 + (1.0 - currentHistTransparency / maxPossibleTransparency) * 0.7
+    previousRgbIntensity = not na(smoothedBias[1]) ? (0.3 + (1.0 - previousHistTransparency / maxPossibleTransparency) * 0.7) : 0.3
     
     // Segments 0-3: Shorts (red gradient) - fill from center outward
     // Segment 0: Very strong shorts (far left) - uses current bar when bias < -0.75
@@ -617,17 +610,13 @@ if showBiasMeter and barstate.islast
     table.cell(biasMeterTable, 3, 2, "", bgcolor=seg3Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
     
     // Segment 4: Center - shows zero-cross triangle when it occurs
-    centerActive = math.abs(normalizedBias) <= 0.1 or segmentIndex == 4
-    // Use lower intensity yellow background for center cell
-    centerSegColor = centerActive ? color.new(color.yellow, 75) : color.black
-    // Detect zero-cross for triangle marker in center cell (up triangle for bullish cross, down for bearish)
-    zeroCrossBull = flippedBull
-    zeroCrossBear = flippedBear
+    // Use lower intensity yellow background for center cell when neutral
+    centerSegColor = isNeutralBias ? color.new(color.yellow, 75) : color.black
     // Current bar marker (triangle or dot with intensity decrease indicator)
     // When neutral, show "NEUTRAL" regardless of intensity change
     currentBarMarker = isNeutralBias ? "NEUTRAL" : (tableIntensityDecreased ? intensityDot + reversedMarker : baseMarker)
     // Show zero-cross triangle if it occurs, otherwise show current bar marker
-    centerText = zeroCrossBull ? "▲" : zeroCrossBear ? "▼" : currentBarMarker
+    centerText = flippedBull ? "▲" : flippedBear ? "▼" : currentBarMarker
     // Use black text for better contrast against yellow background
     centerTextColor = color.black
     table.cell(biasMeterTable, 4, 2, centerText, bgcolor=centerSegColor, text_color=centerTextColor, text_size=size.small, text_halign=text.align_center)
