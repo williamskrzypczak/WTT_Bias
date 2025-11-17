@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.28", "WTT_Bias R1.28", overlay=false)
+indicator("WTT_Bias R1.29", "WTT_Bias R1.29", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,12 @@ indicator("WTT_Bias R1.28", "WTT_Bias R1.28", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.29 - Streamlined alerts to focus on intensity and compression
+//        - Removed zero-cross alerts (bias flipping above/below 0)
+//        - Removed threshold alerts (bias crossing ±threshold)
+//        - Kept intensity decrease alerts (bias momentum easing)
+//        - Kept compression breakout alerts (doji breakouts)
+//        - Visual markers and calculations remain unchanged
 // R1.28 - Integrated WTT Compression doji breakout detection
 //        - Added doji compression detection with configurable body threshold
 //        - Added bullish/bearish breakout markers on price chart
@@ -253,8 +259,8 @@ lineTransparency = input.int(
 
 // Group: Compression Settings
 dojiBodyPercent = input.float(0.25, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.25 = body <= 25% of total range) for a candle to qualify as a doji.")
-requireCloseBreak = input.bool(true, "Require Close Breakout", group="Compression Settings", tooltip="When enabled, the breakout candle must close beyond the doji high/low. Disable to react on intrabar breaches.")
-confirmOnBarClose = input.bool(true, "Confirm Breakouts On Close", group="Compression Settings", tooltip="Wait for the bar to close before confirming breakout signals. Disable to allow intrabar alerts/markers that may disappear if price reverses.")
+requireCloseBreak = input.bool(false, "Require Close Breakout", group="Compression Settings", tooltip="When enabled, the breakout candle must close beyond the doji high/low. Disable to react on intrabar breaches.")
+confirmOnBarClose = input.bool(false, "Confirm Breakouts On Close", group="Compression Settings", tooltip="Wait for the bar to close before confirming breakout signals. Disable to allow intrabar alerts/markers that may disappear if price reverses.")
 showCompressionMarkers = input.bool(true, "Show Breakout Markers", group="Compression Settings", tooltip="Toggle display of the breakout triangles.")
 compressionUpColor = input.color(color.new(color.orange, 0), "Compression Uptrend Color", group="Compression Settings", tooltip="Marker color for bullish doji breakouts.")
 defaultPurple = color.rgb(128, 0, 255)
@@ -269,6 +275,9 @@ var int upTickCount = 0
 var int downTickCount = 0
 var float buyVolume = 0.0
 var float sellVolume = 0.0
+// State variables for compression alerts (track if we've already alerted for current breakout)
+var bool bullBreakoutAlerted = false
+var bool bearBreakoutAlerted = false
 var float lastCloseRt = na
 var float lastVolumeRt = na
 var int lastBarIndex = na
@@ -320,28 +329,28 @@ rtVolBiasRaw = rtVolTotal > 0 ? (buyVolume - sellVolume) / rtVolTotal : 0.0
 calcLtfBuyAgg() =>
     barBuy = close > close[1] ? volume : close < close[1] ? 0.0 : volume * 0.5
     cumBuy = ta.cum(barBuy)
-    newHtfBar = ta.change(time(timeframe.period))
+    newHtfBar = ta.change(time(timeframe.period)) != 0
     startCum = nz(ta.valuewhen(newHtfBar, cumBuy[1], 0), 0.0)
     cumBuy - startCum
 
 calcLtfSellAgg() =>
     barSell = close < close[1] ? volume : close > close[1] ? 0.0 : volume * 0.5
     cumSell = ta.cum(barSell)
-    newHtfBar = ta.change(time(timeframe.period))
+    newHtfBar = ta.change(time(timeframe.period)) != 0
     startCum = nz(ta.valuewhen(newHtfBar, cumSell[1], 0), 0.0)
     cumSell - startCum
 
 calcLtfUpAgg() =>
     barUp = close > close[1] ? 1.0 : 0.0
     cumUp = ta.cum(barUp)
-    newHtfBar = ta.change(time(timeframe.period))
+    newHtfBar = ta.change(time(timeframe.period)) != 0
     startCum = nz(ta.valuewhen(newHtfBar, cumUp[1], 0), 0.0)
     cumUp - startCum
 
 calcLtfDownAgg() =>
     barDown = close < close[1] ? 1.0 : 0.0
     cumDown = ta.cum(barDown)
-    newHtfBar = ta.change(time(timeframe.period))
+    newHtfBar = ta.change(time(timeframe.period)) != 0
     startCum = nz(ta.valuewhen(newHtfBar, cumDown[1], 0), 0.0)
     cumDown - startCum
 
@@ -397,8 +406,6 @@ histogramColor = color.new(histogramBaseColor, effectiveTransparency)
 previousEvaluatedBias = na(lastEvaluatedBias) ? nz(smoothedBias[1]) : lastEvaluatedBias
 flippedBull = previousEvaluatedBias <= 0 and smoothedBias > 0
 flippedBear = previousEvaluatedBias >= 0 and smoothedBias < 0
-turnedBullish = previousEvaluatedBias <= alertThreshold and smoothedBias > alertThreshold
-turnedBearish = previousEvaluatedBias >= -alertThreshold and smoothedBias < -alertThreshold
 
 // ============================================================================
 // CALCULATIONS - COMPRESSION (DOJI BREAKOUT)
@@ -437,7 +444,7 @@ intensityDirection = smoothedBias > 0 ? "bullish" : smoothedBias < 0 ? "bearish"
 intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum compressing" : intensityDirection == "bullish" ? "Bullish momentum easing" : "Bearish momentum easing"
 
 // Plot dot on signal line when intensity decreases
-plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.tiny)
+plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.small)
 
 // Compression breakout markers on price chart
 plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.tiny, color=compressionUpColor)
@@ -473,9 +480,9 @@ if showBiasMeter and barstate.islast
     isNeutralBias = math.abs(normalizedBias) <= 0.1
     
     // Detect intensity decrease (compare current to previous bar)
-    previousBiasIntensity = math.abs(smoothedBias[1])
-    currentBiasIntensity = math.abs(normalizedBias)
-    intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(previousBiasIntensity)
+    tablePreviousBiasIntensity = math.abs(smoothedBias[1])
+    tableCurrentBiasIntensity = math.abs(normalizedBias)
+    tableIntensityDecreased = tableCurrentBiasIntensity < tablePreviousBiasIntensity and not na(tablePreviousBiasIntensity)
     
     // Determine triangle marker and intensity dot
     baseMarker = isShortsBias ? "▼" : isLongsBias ? "▲" : "NEUTRAL"
@@ -512,7 +519,7 @@ if showBiasMeter and barstate.islast
     
     // Row 2: Red-green gradient matching histogram intensity exactly
     // Use exact same intensity calculation as histogram bars
-    maxLightness = 60  // Same as histogram
+    tableMaxLightness = 60  // Same as histogram
     
     // Calculate histogram intensity for current and previous bars (matching histogram calculation)
     currentHistBiasIntensity = math.abs(smoothedBias)
@@ -520,16 +527,16 @@ if showBiasMeter and barstate.islast
     
     // Calculate histogram effective transparency (same as histogram bars)
     currentHistTransparency = smoothedBias == 0 ? histTransparency : 
-              math.max(0, math.min(100, maxLightness * (1 - currentHistBiasIntensity)))
+              math.max(0, math.min(100, tableMaxLightness * (1 - currentHistBiasIntensity)))
     previousHistTransparency = not na(smoothedBias[1]) and smoothedBias[1] == 0 ? histTransparency : 
-              math.max(0, math.min(100, maxLightness * (1 - previousHistBiasIntensity)))
+              math.max(0, math.min(100, tableMaxLightness * (1 - previousHistBiasIntensity)))
     
     // Map histogram transparency to RGB intensity
     // Histogram: low transparency (0) = dark/intense, high transparency (60) = light/faded
     // RGB: low transparency = high RGB (bright), high transparency = low RGB (dim)
     // Invert transparency to get RGB intensity: RGB = 255 * (1 - transparency/60) mapped to 0.3-1.0 range for brighter visibility
-    currentRgbIntensity = 0.3 + (1.0 - currentHistTransparency / maxLightness) * 0.7
-    previousRgbIntensity = not na(smoothedBias[1]) ? (0.3 + (1.0 - previousHistTransparency / maxLightness) * 0.7) : 0.3
+    currentRgbIntensity = 0.3 + (1.0 - currentHistTransparency / tableMaxLightness) * 0.7
+    previousRgbIntensity = not na(smoothedBias[1]) ? (0.3 + (1.0 - previousHistTransparency / tableMaxLightness) * 0.7) : 0.3
     
     // Segments 0-3: Shorts (red gradient) - fill from center outward
     // Segment 0: Very strong shorts (far left) - uses current bar when bias < -0.75
@@ -565,7 +572,7 @@ if showBiasMeter and barstate.islast
     zeroCrossBear = flippedBear
     // Current bar marker (triangle or dot with intensity decrease indicator)
     // When neutral, show "NEUTRAL" regardless of intensity change
-    currentBarMarker = isNeutralBias ? "NEUTRAL" : (intensityDecreased ? intensityDot + reversedMarker : baseMarker)
+    currentBarMarker = isNeutralBias ? "NEUTRAL" : (tableIntensityDecreased ? intensityDot + reversedMarker : baseMarker)
     // Show zero-cross triangle if it occurs, otherwise show current bar marker
     centerText = zeroCrossBull ? "▲" : zeroCrossBear ? "▼" : currentBarMarker
     // Use black text for better contrast against yellow background
@@ -608,29 +615,27 @@ plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up", style=shape
 
 plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down", style=shape.diamond, location=location.absolute, color=markerColor, size=size.tiny)
 
-// Emit at most one alert per bar with priority: zero-cross > threshold
+// Emit intensity alert when bias intensity decreases
 shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
 if shouldEvaluateNow
-    string alertMsg = na
-    if flippedBull
-        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias flipped above 0"
-    else if flippedBear
-        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias flipped below 0"
-    else if turnedBullish
-        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed above +" + str.tostring(alertThreshold)
-    else if turnedBearish
-        alertMsg := "WTT_Bias (" + syminfo.ticker + "): Bias crossed below -" + str.tostring(alertThreshold)
-    else if intensityAlertEnabled and intensityDecreased
-        alertMsg := "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
-
-    if not na(alertMsg)
+    if intensityAlertEnabled and intensityDecreased
+        alertMsg = "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
 
     lastEvaluatedBias := smoothedBias
 
-// Compression breakout alerts
-if enableCompressionAlerts and isBullCompressionSignal
-    alert(bullCompressionAlertMessage, alert.freq_once_per_bar)
+// Compression breakout alerts - fire once per bar (intrabar if confirmOnBarClose is false, on close if true)
+// Reset alert flags on new bar
+if barstate.isnew
+    bullBreakoutAlerted := false
+    bearBreakoutAlerted := false
 
-if enableCompressionAlerts and isBearCompressionSignal
+// Fire alert once per bar when breakout is detected (prevents TradingView's 15 alerts per 3 minutes limit)
+// Alert timing respects confirmOnBarClose setting: false = intrabar, true = on bar close
+if enableCompressionAlerts and isBullCompressionSignal and not bullBreakoutAlerted
+    alert(bullCompressionAlertMessage, alert.freq_once_per_bar)
+    bullBreakoutAlerted := true
+
+if enableCompressionAlerts and isBearCompressionSignal and not bearBreakoutAlerted
     alert(bearCompressionAlertMessage, alert.freq_once_per_bar)
+    bearBreakoutAlerted := true
