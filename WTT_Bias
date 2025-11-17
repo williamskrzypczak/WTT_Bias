@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.29", "WTT_Bias R1.29", overlay=false)
+indicator("WTT_Bias R1.30", "WTT_Bias R1.30", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,14 @@ indicator("WTT_Bias R1.29", "WTT_Bias R1.29", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.30 - Added pip value calculation and display
+//        - Added pip value calculation for forex currency pairs
+//        - Supports USD pairs (quote and base) and cross pairs
+//        - Handles JPY pairs with correct pip size (0.01 vs 0.0001)
+//        - Configurable lot size input (default 1.0 standard lot)
+//        - Displays pip value in bias meter table (row 3)
+//        - Shows pip value in appropriate currency (USD for USD pairs, quote currency for cross pairs)
+//        - Gracefully handles non-forex symbols (displays "N/A")
 // R1.29 - Streamlined alerts to focus on intensity and compression
 //        - Removed zero-cross alerts (bias flipping above/below 0)
 //        - Removed threshold alerts (bias crossing ±threshold)
@@ -267,6 +275,10 @@ defaultPurple = color.rgb(128, 0, 255)
 compressionDownColor = input.color(color.new(defaultPurple, 0), "Compression Downtrend Color", group="Compression Settings", tooltip="Marker color for bearish doji breakouts.")
 enableCompressionAlerts = input.bool(true, "Enable Compression Alerts", group="Compression Settings", tooltip="Send an alert notification whenever a bullish or bearish doji breakout is detected.")
 
+// Group: Pip Value Settings
+showPipValue = input.bool(true, "Show Pip Value", group="Pip Value Settings", tooltip="Display the monetary value of a pip for the current currency pair.")
+lotSize = input.float(1.0, "Lot Size (Standard Lots)", minval=0.01, step=0.01, group="Pip Value Settings", tooltip="Position size in standard lots (1.0 = 100,000 units). Used to calculate pip value.")
+
 // ============================================================================
 // CALCULATIONS - REALTIME PROXY (LAST BAR)
 // ============================================================================
@@ -428,6 +440,46 @@ bullCompressionAlertMessage = "WaveRider WTT Compression: Bullish doji breakout 
 bearCompressionAlertMessage = "WaveRider WTT Compression: Bearish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
 
 // ============================================================================
+// CALCULATIONS - PIP VALUE
+// ============================================================================
+// Determine pip size based on currency pair (JPY pairs use 0.01, others use 0.0001)
+baseCurrency = syminfo.basecurrency
+quoteCurrency = syminfo.currency
+isForexPair = str.length(baseCurrency) == 3 and str.length(quoteCurrency) == 3
+isJpyPair = isForexPair and (baseCurrency == "JPY" or quoteCurrency == "JPY")
+pipSize = isJpyPair ? 0.01 : 0.0001
+
+// Calculate pip value based on pair type
+// Standard lot size = 100,000 units
+standardLotSize = 100000.0
+positionSize = lotSize * standardLotSize
+
+// Determine if USD is in the pair
+isUsdBase = isForexPair and baseCurrency == "USD"
+isUsdQuote = isForexPair and quoteCurrency == "USD"
+isUsdPair = isUsdBase or isUsdQuote
+
+// Calculate pip value (only for forex pairs)
+float pipValue = na
+if isForexPair
+    if isUsdPair
+        if isUsdQuote
+            // USD is quote currency (e.g., EUR/USD): pipValue = (pipSize * positionSize) / exchangeRate
+            pipValue := close > 0 ? (pipSize * positionSize) / close : na
+        else
+            // USD is base currency (e.g., USD/JPY): pipValue = pipSize * positionSize
+            pipValue := pipSize * positionSize
+    else
+        // Cross pair (e.g., EUR/GBP): Need to convert through USD
+        // For cross pairs, we'll use a simplified calculation: pipValue = (pipSize * positionSize) / close
+        // This gives pip value in quote currency, which can be converted to USD if needed
+        pipValue := close > 0 ? (pipSize * positionSize) / close : na
+
+// Format pip value for display
+pipValueText = not na(pipValue) and isForexPair ? str.tostring(pipValue, "#.##") : "N/A"
+pipValueCurrency = isForexPair and not na(pipValue) ? (isUsdPair ? (isUsdQuote ? quoteCurrency : baseCurrency) : quoteCurrency) : ""
+
+// ============================================================================
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
@@ -461,8 +513,9 @@ if showBiasMeter and barstate.islast
     if not na(biasMeterTable)
         table.delete(biasMeterTable)
     
-    // Create meter table: 9 columns (4 shorts + 1 center + 4 longs), 3 rows
-    biasMeterTable := table.new(position.bottom_right, 9, 3, bgcolor=color.new(color.white, 50), border_width=0)
+    // Create meter table: 9 columns (4 shorts + 1 center + 4 longs), 4 rows (3 for meter + 1 for pip value)
+    tableRows = showPipValue ? 4 : 3
+    biasMeterTable := table.new(position.bottom_right, 9, tableRows, bgcolor=color.new(color.white, 50), border_width=0)
     
     // Convert smoothedBias (-1.0 to +1.0) to segment index (0-8)
     // Segment mapping: 0-3 = shorts (strong to weak), 4 = center, 5-8 = longs (weak to strong)
@@ -603,6 +656,20 @@ if showBiasMeter and barstate.islast
     seg8RgbValue = seg8Active ? int(255 * currentRgbIntensity) : 0
     seg8Color = seg8Active ? color.rgb(0, seg8RgbValue, 0) : color.black
     table.cell(biasMeterTable, 8, 2, "", bgcolor=seg8Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    
+    // Row 3: Pip value display (if enabled)
+    if showPipValue
+        // Display pip value in center column
+        pipValueDisplay = str.length(pipValueCurrency) > 0 ? "Pip: " + pipValueText + " " + pipValueCurrency : "Pip: " + pipValueText
+        table.cell(biasMeterTable, 0, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 1, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 2, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 3, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 4, 3, pipValueDisplay, bgcolor=color.black, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+        table.cell(biasMeterTable, 5, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 6, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 7, 3, "", bgcolor=color.black)  // Empty cell
+        table.cell(biasMeterTable, 8, 3, "", bgcolor=color.black)  // Empty cell
 
 // =========================================================================
 // ALERTS
@@ -615,10 +682,10 @@ plotshape(bullFlipSignal ? smoothedBias : na, title="Zero-Cross Up", style=shape
 
 plotshape(bearFlipSignal ? smoothedBias : na, title="Zero-Cross Down", style=shape.diamond, location=location.absolute, color=markerColor, size=size.tiny)
 
-// Emit intensity alert when bias intensity decreases
+// Emit intensity alert when bias intensity decreases (exclude neutral bias)
 shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
 if shouldEvaluateNow
-    if intensityAlertEnabled and intensityDecreased
+    if intensityAlertEnabled and intensityDecreased and intensityDirection != "neutral"
         alertMsg = "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
 
