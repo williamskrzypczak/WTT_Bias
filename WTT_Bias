@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.32", "WTT_Bias R1.32", overlay=false)
+indicator("WTT_Bias R1.36", "WTT_Bias R1.36", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,18 @@ indicator("WTT_Bias R1.32", "WTT_Bias R1.32", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.36 - Enhanced compression alerts and removed bias meter table
+//        - Modified compression breakout detection to use doji open/close instead of high/low
+//        - Added minimum breakout percentage threshold (default 0.2%) to reduce false triggers
+//        - Aligned compression alerts with dot plotting conditions for consistency
+//        - Removed bias meter table and all related code
+// R1.35 - Removed combined signal feature and cleaned up code
+//        - Removed combined signal visual indicators and related debug/test markers
+//        - Removed combined signal alert functionality
+//        - Code cleanup and optimization
+// R1.33 - Enhanced histogram visual aesthetics
+//        - Improved color gradient transitions with smoother exponential interpolation
+//        - Added histogram style selection (Columns/Area/Both) for visual customization
 // R1.32 - Removed zero-cross visual markers and pip value calculations
 //        - Removed zero-cross marker input parameter and visual markers
 //        - Removed zero-cross marker color input parameter
@@ -203,17 +215,18 @@ showSignalLine = input.bool(
      group="Visual Settings",
      tooltip="Plot the smoothed bias as a line over the histogram.")
 
-showBiasMeter = input.bool(
-     defval=true,
-     title="Show Bias Meter",
-     group="Visual Settings",
-     tooltip="Display an analog volume meter dial showing bias to shorts (left) and longs (right).")
-
 showIntensityDecreaseDots = input.bool(
      defval=true,
      title="Show Intensity Decrease Dots",
      group="Visual Settings",
      tooltip="Plot dots on signal line when bias intensity decreases (stronger to weaker).")
+
+histogramStyle = input.string(
+     defval="Columns",
+     title="Histogram Style",
+     options=["Columns", "Area", "Both"],
+     group="Visual Settings",
+     tooltip="Display style for histogram: Columns (bar-style), Area (continuous fill), or Both (layered effect).")
 
 // Group: Alert Settings
 alertOnBarClose = input.bool(
@@ -229,7 +242,7 @@ bullishColor = input.color(
      group="Colors")
 
 bearishColor = input.color(
-     defval=color.new(color.rgb(230, 230, 230), 0),
+     defval=color.new(color.rgb(218, 37, 96), 0),
      title="Bearish Color",
      group="Colors")
 
@@ -251,9 +264,10 @@ lineTransparency = input.int(
      group="Colors")
 
 // Group: Compression Settings
-dojiBodyPercent = input.float(0.25, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.25 = body <= 25% of total range) for a candle to qualify as a doji.")
+dojiBodyPercent = input.float(0.15, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.15 = body <= 15% of total range) for a candle to qualify as a doji.")
 requireCloseBreak = input.bool(false, "Require Close Breakout", group="Compression Settings", tooltip="When enabled, the breakout candle must close beyond the doji high/low. Disable to react on intrabar breaches.")
 confirmOnBarClose = input.bool(false, "Confirm Breakouts On Close", group="Compression Settings", tooltip="Wait for the bar to close before confirming breakout signals. Disable to allow intrabar alerts/markers that may disappear if price reverses.")
+breakoutMinPercent = input.float(0.2, "Minimum Breakout %", minval=0.0, maxval=10.0, step=0.1, group="Compression Settings", tooltip="Minimum percentage move from doji open/close required to trigger breakout alert. Higher values reduce false signals from small price movements.")
 showCompressionMarkers = input.bool(true, "Show Breakout Markers", group="Compression Settings", tooltip="Toggle display of the breakout triangles.")
 compressionUpColor = input.color(color.new(color.orange, 0), "Compression Uptrend Color", group="Compression Settings", tooltip="Marker color for bullish doji breakouts.")
 defaultPurple = color.rgb(128, 0, 255)
@@ -381,15 +395,17 @@ smoothedBias = ta.sma(biased, smoothLength)
 // Weaker bias = lighter colors (more transparency = lighter/more faded)
 biasIntensity = math.abs(smoothedBias)
 
-// Calculate transparency based on bias strength
+// Calculate transparency based on bias strength using smooth exponential interpolation
 // Strong bias (near ±1.0) → low transparency (dark green/gray)
 // Weak bias (near 0) → high transparency (light green/gray)
-// Formula: darkness increases with bias strength
+// Formula: Exponential curve for smoother, more natural gradient transitions
 // Base transparency from user setting, with intensity-based variation
 // Maximum transparency range: histTransparency (strong) to histTransparency + 50 (weak)
 maxLightnessRange = 50  // Additional transparency range for intensity variation
+gradientExponent = 0.7  // Exponential curve factor for smooth transitions (0.7 provides balanced curve)
+// Use exponential interpolation for smoother gradient: pow(biasIntensity, exponent) creates natural curve
 effectiveTransparency = smoothedBias == 0 ? histTransparency : 
-          math.max(0, math.min(100, histTransparency + (maxLightnessRange * (1 - biasIntensity))))
+          math.max(0, math.min(100, histTransparency + (maxLightnessRange * (1 - math.pow(biasIntensity, gradientExponent)))))
 
 // Get base color for histogram
 histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
@@ -407,9 +423,19 @@ bodySize = not na(close) and not na(open) ? math.abs(close - open) : na
 isDoji = hasValidRange and not na(bodySize) and not na(trueRange) and trueRange > 0 and bodySize <= trueRange * dojiBodyPercent
 hasPriorBar = bar_index > 0
 wasDoji = hasPriorBar and nz(isDoji[1], false)
-hasPriorHighLow = hasPriorBar and not na(high[1]) and not na(low[1])
-closeBreaksUp = hasPriorHighLow and (requireCloseBreak ? close >= high[1] : high > high[1])
-closeBreaksDown = hasPriorHighLow and (requireCloseBreak ? close <= low[1] : low < low[1])
+hasPriorOpenClose = hasPriorBar and not na(open[1]) and not na(close[1])
+// Calculate reference prices from doji (higher for bullish, lower for bearish)
+dojiHighRef = hasPriorOpenClose ? math.max(open[1], close[1]) : na
+dojiLowRef = hasPriorOpenClose ? math.min(open[1], close[1]) : na
+// Calculate current price based on requireCloseBreak setting
+currentHighPrice = requireCloseBreak ? close : high
+currentLowPrice = requireCloseBreak ? close : low
+// Calculate percentage moves from reference prices
+bullMovePercent = hasPriorOpenClose and dojiHighRef > 0 ? ((currentHighPrice - dojiHighRef) / dojiHighRef) * 100 : 0.0
+bearMovePercent = hasPriorOpenClose and dojiLowRef > 0 ? ((dojiLowRef - currentLowPrice) / dojiLowRef) * 100 : 0.0
+// Breakout conditions: must break above/below AND exceed minimum percentage threshold
+closeBreaksUp = hasPriorOpenClose and (currentHighPrice > dojiHighRef) and (bullMovePercent >= breakoutMinPercent)
+closeBreaksDown = hasPriorOpenClose and (currentLowPrice < dojiLowRef) and (bearMovePercent >= breakoutMinPercent)
 isBullBreakout = wasDoji and closeBreaksUp
 isBearBreakout = wasDoji and closeBreaksDown
 isBarConfirmed = not confirmOnBarClose or barstate.isconfirmed
@@ -422,7 +448,18 @@ bearCompressionAlertMessage = "WaveRider WTT Compression: Bearish doji breakout 
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
-plot(showHistogram ? smoothedBias : na, "Bias", style=plot.style_columns, color=smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor)
+
+// Histogram plots based on style selection
+histogramColorFinal = smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor
+showColumns = showHistogram and (histogramStyle == "Columns" or histogramStyle == "Both")
+showArea = showHistogram and (histogramStyle == "Area" or histogramStyle == "Both")
+// Area style uses slightly higher transparency for layered effect when Both is selected
+areaTransparency = histogramStyle == "Both" ? effectiveTransparency + 15 : effectiveTransparency
+histogramColorArea = smoothedBias == 0 ? color.new(zeroColor, areaTransparency) : color.new(histogramBaseColor, areaTransparency)
+
+plot(showColumns ? smoothedBias : na, "Bias Columns", style=plot.style_columns, color=histogramColorFinal)
+plot(showArea ? smoothedBias : na, "Bias Area", style=plot.style_area, color=histogramColorArea)
+
 // Signal line with lime, reddish-pink, or gray for quick directional recognition
 signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) : color.new(color.gray, lineTransparency)
 plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
@@ -434,162 +471,21 @@ intensityDecreased = currentBiasIntensity < previousBiasIntensity and not na(pre
 intensityDirection = smoothedBias > 0 ? "bullish" : smoothedBias < 0 ? "bearish" : "neutral"
 intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum compressing" : intensityDirection == "bullish" ? "Bullish momentum easing" : "Bearish momentum easing"
 
-// Plot dot on signal line when intensity decreases
-plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.small)
+// Plot dot on signal line when intensity decreases (exclude neutral/zero cross gray dots)
+plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral" ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.small)
 
 // Compression breakout markers on price chart
 plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.tiny, color=compressionUpColor)
 plotshape(showCompressionMarkers and isBearCompressionSignal, title="Doji Breakout Down", style=shape.triangledown, location=location.abovebar, size=size.tiny, color=compressionDownColor)
 
-// ============================================================================
-// ANALOG BIAS METER DIAL
-// ============================================================================
-var table biasMeterTable = na
-if showBiasMeter and barstate.islast
-    // Delete existing table to recreate with updated data
-    if not na(biasMeterTable)
-        table.delete(biasMeterTable)
-    
-    // Create meter table: 9 columns (4 shorts + 1 center + 4 longs), 3 rows
-    biasMeterTable := table.new(position.bottom_right, 9, 3, bgcolor=color.new(color.white, 50), border_width=0)
-    
-    // Normalize bias to -1.0 to +1.0 range
-    normalizedBias = math.max(-1.0, math.min(1.0, smoothedBias))
-    
-    // Determine current bias direction
-    isShortsBias = normalizedBias < -0.1
-    isLongsBias = normalizedBias > 0.1
-    isNeutralBias = math.abs(normalizedBias) <= 0.1
-    
-    // Detect intensity decrease (compare current to previous bar)
-    tablePreviousBiasIntensity = math.abs(smoothedBias[1])
-    tableCurrentBiasIntensity = math.abs(normalizedBias)
-    tableIntensityDecreased = tableCurrentBiasIntensity < tablePreviousBiasIntensity and not na(tablePreviousBiasIntensity)
-    
-    // Determine triangle marker and intensity dot
-    baseMarker = isShortsBias ? "▼" : isLongsBias ? "▲" : "NEUTRAL"
-    intensityDot = "●"  // Dot to show when intensity decreases
-    // When intensity decreases, reverse the arrow and place it after the dot
-    reversedMarker = baseMarker == "▼" ? "▲" : baseMarker == "▲" ? "▼" : baseMarker
-    
-    // Row 0: Title row - "Directional Bias"
-    table.cell(biasMeterTable, 0, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 1, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 2, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 3, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 4, 0, "CDB", bgcolor=color.black, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    table.cell(biasMeterTable, 5, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 6, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 7, 0, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 8, 0, "", bgcolor=color.black)  // Empty cell
-    
-    // Row 1: Labels row - black background, highlight current bias direction
-    shortsLabelText = isShortsBias ? color.white : color.red
-    table.cell(biasMeterTable, 0, 1, "SHORT", bgcolor=color.black, text_color=shortsLabelText, text_size=size.small, text_halign=text.align_left)
-    table.cell(biasMeterTable, 1, 1, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 2, 1, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 3, 1, "", bgcolor=color.black)  // Empty cell
-    
-    centerLabelText = isNeutralBias ? color.white : color.gray
-    table.cell(biasMeterTable, 4, 1, "0", bgcolor=color.black, text_color=centerLabelText, text_size=size.small, text_halign=text.align_center)
-    
-    table.cell(biasMeterTable, 5, 1, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 6, 1, "", bgcolor=color.black)  // Empty cell
-    table.cell(biasMeterTable, 7, 1, "", bgcolor=color.black)  // Empty cell
-    longsLabelText = isLongsBias ? color.white : color.green
-    table.cell(biasMeterTable, 8, 1, "LONG", bgcolor=color.black, text_color=longsLabelText, text_size=size.small, text_halign=text.align_right)
-    
-    // Row 2: Red-green gradient matching histogram intensity exactly
-    // Use exact same intensity calculation as histogram bars
-    tableMaxLightnessRange = 50  // Same as histogram maxLightnessRange
-    
-    // Calculate histogram intensity for current and previous bars (matching histogram calculation)
-    currentHistBiasIntensity = math.abs(smoothedBias)
-    previousHistBiasIntensity = math.abs(smoothedBias[1])
-    
-    // Calculate histogram effective transparency (same as histogram bars)
-    currentHistTransparency = smoothedBias == 0 ? histTransparency : 
-              math.max(0, math.min(100, histTransparency + (tableMaxLightnessRange * (1 - currentHistBiasIntensity))))
-    previousHistTransparency = not na(smoothedBias[1]) and smoothedBias[1] == 0 ? histTransparency : 
-              math.max(0, math.min(100, histTransparency + (tableMaxLightnessRange * (1 - previousHistBiasIntensity))))
-    
-    // Map histogram transparency to RGB intensity
-    // Histogram: low transparency = dark/intense, high transparency = light/faded
-    // RGB: low transparency = high RGB (bright), high transparency = low RGB (dim)
-    // Invert transparency to get RGB intensity: RGB = 255 * (1 - transparency/maxTransparency) mapped to 0.3-1.0 range for brighter visibility
-    // Use maximum possible transparency (histTransparency + range) for scaling
-    maxPossibleTransparency = histTransparency + tableMaxLightnessRange
-    currentRgbIntensity = 0.3 + (1.0 - currentHistTransparency / maxPossibleTransparency) * 0.7
-    previousRgbIntensity = not na(smoothedBias[1]) ? (0.3 + (1.0 - previousHistTransparency / maxPossibleTransparency) * 0.7) : 0.3
-    
-    // Segments 0-3: Shorts (red gradient) - fill from center outward
-    // Segment 0: Very strong shorts (far left) - uses current bar when bias < -0.75
-    seg0Active = normalizedBias < -0.75
-    seg0RgbValue = seg0Active ? int(255 * currentRgbIntensity) : 0
-    seg0Color = seg0Active ? color.rgb(seg0RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 0, 2, "", bgcolor=seg0Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 1: Strong shorts - uses current bar when bias < -0.5
-    seg1Active = normalizedBias < -0.5
-    seg1RgbValue = seg1Active ? int(255 * currentRgbIntensity) : 0
-    seg1Color = seg1Active ? color.rgb(seg1RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 1, 2, "", bgcolor=seg1Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 2: Medium shorts - uses previous bar when bias < -0.25
-    seg2Active = normalizedBias < -0.25
-    seg2RgbValue = seg2Active ? int(255 * previousRgbIntensity) : 0
-    seg2Color = seg2Active ? color.rgb(seg2RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 2, 2, "", bgcolor=seg2Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 3: Weak shorts - uses previous bar when bias < -0.1
-    seg3Active = normalizedBias < -0.1
-    seg3RgbValue = seg3Active ? int(255 * previousRgbIntensity) : 0
-    seg3Color = seg3Active ? color.rgb(seg3RgbValue, 0, 0) : color.black
-    table.cell(biasMeterTable, 3, 2, "", bgcolor=seg3Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 4: Center - shows current bias direction marker
-    // Use lower intensity yellow background for center cell when neutral
-    centerSegColor = isNeutralBias ? color.new(color.yellow, 75) : color.black
-    // Current bar marker (triangle or dot with intensity decrease indicator)
-    // When neutral, show "NEUTRAL" regardless of intensity change
-    currentBarMarker = isNeutralBias ? "NEUTRAL" : (tableIntensityDecreased ? intensityDot + reversedMarker : baseMarker)
-    centerText = currentBarMarker
-    // Use black text for better contrast against yellow background
-    centerTextColor = color.black
-    table.cell(biasMeterTable, 4, 2, centerText, bgcolor=centerSegColor, text_color=centerTextColor, text_size=size.small, text_halign=text.align_center)
-    
-    // Segments 5-8: Longs (green gradient) - fill from center outward
-    // Segment 5: Weak longs - uses previous bar when bias > 0.1
-    seg5Active = normalizedBias > 0.1
-    seg5RgbValue = seg5Active ? int(255 * previousRgbIntensity) : 0
-    seg5Color = seg5Active ? color.rgb(0, seg5RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 5, 2, "", bgcolor=seg5Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 6: Medium longs - uses previous bar when bias > 0.25
-    seg6Active = normalizedBias > 0.25
-    seg6RgbValue = seg6Active ? int(255 * previousRgbIntensity) : 0
-    seg6Color = seg6Active ? color.rgb(0, seg6RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 6, 2, "", bgcolor=seg6Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 7: Strong longs - uses current bar when bias > 0.5
-    seg7Active = normalizedBias > 0.5
-    seg7RgbValue = seg7Active ? int(255 * currentRgbIntensity) : 0
-    seg7Color = seg7Active ? color.rgb(0, seg7RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 7, 2, "", bgcolor=seg7Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-    
-    // Segment 8: Very strong longs (far right) - uses current bar when bias > 0.75
-    seg8Active = normalizedBias > 0.75
-    seg8RgbValue = seg8Active ? int(255 * currentRgbIntensity) : 0
-    seg8Color = seg8Active ? color.rgb(0, seg8RgbValue, 0) : color.black
-    table.cell(biasMeterTable, 8, 2, "", bgcolor=seg8Color, text_color=color.white, text_size=size.small, text_halign=text.align_center)
-
 // =========================================================================
 // ALERTS
 // =========================================================================
 // Emit intensity alert when bias intensity decreases (exclude neutral bias)
+// Alert conditions must match dot plotting conditions for consistency
 shouldEvaluateNow = alertOnBarClose ? barstate.isconfirmed : barstate.isconfirmed or barstate.isrealtime
 if shouldEvaluateNow
-    if intensityAlertEnabled and intensityDecreased and intensityDirection != "neutral"
+    if intensityAlertEnabled and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral"
         alertMsg = "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
 
