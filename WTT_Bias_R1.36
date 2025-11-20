@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.36", "WTT_Bias R1.36", overlay=false)
+indicator("WTT_Bias R1.37", "WTT_Bias R1.37", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,10 @@ indicator("WTT_Bias R1.36", "WTT_Bias R1.36", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.37 - Removed VU meter table and cleaned up unused code
+//        - Removed VU meter table and all related code
+//        - Removed unused previousEvaluatedBias variable
+//        - Code cleanup and optimization
 // R1.36 - Enhanced compression alerts and removed bias meter table
 //        - Modified compression breakout detection to use doji open/close instead of high/low
 //        - Added minimum breakout percentage threshold (default 0.2%) to reduce false triggers
@@ -410,9 +414,6 @@ effectiveTransparency = smoothedBias == 0 ? histTransparency :
 // Get base color for histogram
 histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
 histogramColor = color.new(histogramBaseColor, effectiveTransparency)
-
-// Track bias transitions using last evaluated value for alert/table alignment
-previousEvaluatedBias = na(lastEvaluatedBias) ? nz(smoothedBias[1]) : lastEvaluatedBias
 
 // ============================================================================
 // CALCULATIONS - COMPRESSION (DOJI BREAKOUT)
