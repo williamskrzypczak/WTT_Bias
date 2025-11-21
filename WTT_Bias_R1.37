@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.37", "WTT_Bias R1.37", overlay=false)
+indicator("WTT_Bias R1.38", "WTT_Bias R1.38", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,15 @@ indicator("WTT_Bias R1.37", "WTT_Bias R1.37", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.38 - Added bias table display at lower right corner with intensity visualization
+//        - Added compact bias table showing current bias direction and intensity
+//        - Table displays text labels: "LONG", "SHORT", or "NEUTRAL" instead of numerical values
+//        - Added intensity labels: "STRONG", "MODERATE", or "WEAK" appended to direction
+//        - Table uses color-coded backgrounds matching histogram colors (green/reddish-pink/yellow)
+//        - Enhanced visual intensity: stronger bias = more opaque colors, weaker = more transparent
+//        - Reduced background transparency for better visibility (40% base, up to 35% intensity variation)
+//        - Added toggle input parameter to show/hide table
+//        - Table updates only on last bar for optimal performance
 // R1.37 - Removed VU meter table and cleaned up unused code
 //        - Removed VU meter table and all related code
 //        - Removed unused previousEvaluatedBias variable
@@ -231,6 +240,12 @@ histogramStyle = input.string(
      options=["Columns", "Area", "Both"],
      group="Visual Settings",
      tooltip="Display style for histogram: Columns (bar-style), Area (continuous fill), or Both (layered effect).")
+
+showBiasTable = input.bool(
+     defval=true,
+     title="Show Bias Table",
+     group="Visual Settings",
+     tooltip="Display current bias value in a color-coded table at the lower right corner of the chart.")
 
 // Group: Alert Settings
 alertOnBarClose = input.bool(
@@ -474,6 +489,65 @@ intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum 
 
 // Plot dot on signal line when intensity decreases (exclude neutral/zero cross gray dots)
 plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral" ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.small)
+
+// ============================================================================
+// BIAS TABLE
+// ============================================================================
+// Determine bias direction and intensity for table color coding
+biasValue = smoothedBias
+isBullish = biasValue > 0
+isBearish = biasValue < 0
+isNeutral = biasValue == 0 or math.abs(biasValue) < neutralDeadband
+
+// Calculate intensity-based transparency for table background
+// Stronger bias = more opaque (lower transparency), weaker bias = more transparent
+// Base transparency: 40 (vibrant, visible background), with dramatic intensity variation
+tableBaseTransparency = 40
+tableIntensityVariation = 35  // Increased range for more dramatic intensity visualization
+tableTransparency = isNeutral ? tableBaseTransparency : math.max(0, math.min(100, tableBaseTransparency - (biasIntensity * tableIntensityVariation)))
+
+// Determine table background and text colors
+tableBgColor = isNeutral ? color.new(zeroColor, tableTransparency) : (isBullish ? color.new(bullishColor, tableTransparency) : color.new(bearishColor, tableTransparency))
+
+tableTextColor = isNeutral ? color.black : color.white
+
+// Determine bias intensity level for labeling
+isStrongBias = biasIntensity >= 0.7
+isModerateBias = biasIntensity >= 0.3 and biasIntensity < 0.7
+isWeakBias = biasIntensity < 0.3 and not isNeutral
+
+// Determine bias direction and intensity text label
+biasLabel = isNeutral ? "NEUTRAL" : (isBullish ? "LONG" : "SHORT")
+intensityLabel = isStrongBias ? " (STRONG)" : (isModerateBias ? " (MODERATE)" : (isWeakBias ? " (WEAK)" : ""))
+fullBiasLabel = biasLabel + intensityLabel
+
+// Create and update bias table (only on last bar for performance)
+var table biasTable = na
+
+if showBiasTable and barstate.islast
+    if na(biasTable)
+        biasTable := table.new(position.bottom_right, 2, 2, 
+                               bgcolor=color.new(color.white, 95), 
+                               border_width=1)
+    
+    // Header row
+    table.cell(biasTable, 0, 0, "Bias", 
+               bgcolor=color.new(color.gray, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.cell(biasTable, 1, 0, "", 
+               bgcolor=color.new(color.gray, 70))
+    
+    // Value row with color-coded background
+    table.cell(biasTable, 0, 1, "", bgcolor=tableBgColor)
+    table.cell(biasTable, 1, 1, fullBiasLabel, 
+               bgcolor=tableBgColor, 
+               text_color=tableTextColor, 
+               text_size=size.normal)
+else if not showBiasTable and not na(biasTable)
+    // Delete table when disabled
+    table.delete(biasTable)
+    biasTable := na
 
 // Compression breakout markers on price chart
 plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.tiny, color=compressionUpColor)
