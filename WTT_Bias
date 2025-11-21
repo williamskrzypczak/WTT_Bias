@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.38", "WTT_Bias R1.38", overlay=false)
+indicator("WTT_Bias R1.39", "WTT_Bias R1.39", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,12 @@ indicator("WTT_Bias R1.38", "WTT_Bias R1.38", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.39 - Enhanced bias table with intensity decrease indicator
+//        - Added "DECREASING" indicator to bias table when intensity is decreasing
+//        - Decreasing indicator displayed in separate cell with smaller font (tiny size)
+//        - Decreasing cell background and text use signal line colors (lime green/reddish-pink)
+//        - Text color automatically contrasts with background for optimal readability
+//        - Visual consistency with intensity decrease dots on signal line
 // R1.38 - Added bias table display at lower right corner with intensity visualization
 //        - Added compact bias table showing current bias direction and intensity
 //        - Table displays text labels: "LONG", "SHORT", or "NEUTRAL" instead of numerical values
@@ -519,14 +525,32 @@ isWeakBias = biasIntensity < 0.3 and not isNeutral
 // Determine bias direction and intensity text label
 biasLabel = isNeutral ? "NEUTRAL" : (isBullish ? "LONG" : "SHORT")
 intensityLabel = isStrongBias ? " (STRONG)" : (isModerateBias ? " (MODERATE)" : (isWeakBias ? " (WEAK)" : ""))
-fullBiasLabel = biasLabel + intensityLabel
+// Main label without decreasing indicator
+mainBiasLabel = biasLabel + intensityLabel
+// Decreasing indicator text (separate for smaller font)
+decreasingText = intensityDecreased and intensityDirection != "neutral" ? "DECREASING" : ""
+
+// Calculate contrasting text color for decreasing cell based on signal line color brightness
+// Base colors without transparency for luminance calculation
+bullishBaseColor = color.rgb(191, 255, 0)  // Lime green
+bearishBaseColor = color.rgb(255, 100, 140)  // Reddish-pink
+neutralBaseColor = color.gray
+
+// Calculate relative luminance (0-255 scale, higher = brighter)
+// Formula: L = 0.299*R + 0.587*G + 0.114*B
+bullishLuminance = 0.299 * 191 + 0.587 * 255 + 0.114 * 0  // ~207 (bright - use black text)
+bearishLuminance = 0.299 * 255 + 0.587 * 100 + 0.114 * 140  // ~151 (medium - use black text)
+neutralLuminance = 128  // Gray - use black text
+
+// Choose text color: black for bright backgrounds (>128), white for dark backgrounds
+decreasingTextColor = isNeutral ? color.black : (isBullish ? (bullishLuminance > 128 ? color.black : color.white) : (bearishLuminance > 128 ? color.black : color.white))
 
 // Create and update bias table (only on last bar for performance)
 var table biasTable = na
 
 if showBiasTable and barstate.islast
     if na(biasTable)
-        biasTable := table.new(position.bottom_right, 2, 2, 
+        biasTable := table.new(position.bottom_right, 3, 2, 
                                bgcolor=color.new(color.white, 95), 
                                border_width=1)
     
@@ -537,13 +561,19 @@ if showBiasTable and barstate.islast
                text_size=size.small)
     table.cell(biasTable, 1, 0, "", 
                bgcolor=color.new(color.gray, 70))
+    table.cell(biasTable, 2, 0, "", 
+               bgcolor=color.new(color.gray, 70))
     
     // Value row with color-coded background
     table.cell(biasTable, 0, 1, "", bgcolor=tableBgColor)
-    table.cell(biasTable, 1, 1, fullBiasLabel, 
+    table.cell(biasTable, 1, 1, mainBiasLabel, 
                bgcolor=tableBgColor, 
                text_color=tableTextColor, 
                text_size=size.normal)
+    table.cell(biasTable, 2, 1, decreasingText, 
+               bgcolor=signalLineColor, 
+               text_color=decreasingTextColor, 
+               text_size=size.tiny)
 else if not showBiasTable and not na(biasTable)
     // Delete table when disabled
     table.delete(biasTable)
