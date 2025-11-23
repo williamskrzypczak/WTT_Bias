@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.40", "WTT_Bias R1.40", overlay=false)
+indicator("WTT_Bias R1.41", "WTT_Bias R1.41", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,10 @@ indicator("WTT_Bias R1.40", "WTT_Bias R1.40", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.41 - Matched compression breakout triangle size to intensity decrease dots
+//        - Changed triangle markers from size.large to size.small to match dot size
+//        - Ensures visual consistency between compression markers and intensity dots
+//        - Applies to both bullish (up) and bearish (down) compression breakout markers
 // R1.40 - Increased compression breakout triangle marker size
 //        - Changed triangle markers from size.tiny to size.large for better visibility
 //        - Applies to both bullish (up) and bearish (down) compression breakout markers
@@ -583,8 +587,8 @@ else if not showBiasTable and not na(biasTable)
     biasTable := na
 
 // Compression breakout markers on price chart
-plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.large, color=compressionUpColor)
-plotshape(showCompressionMarkers and isBearCompressionSignal, title="Doji Breakout Down", style=shape.triangledown, location=location.abovebar, size=size.large, color=compressionDownColor)
+plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.small, color=compressionUpColor)
+plotshape(showCompressionMarkers and isBearCompressionSignal, title="Doji Breakout Down", style=shape.triangledown, location=location.abovebar, size=size.small, color=compressionDownColor)
 
 // =========================================================================
 // ALERTS
