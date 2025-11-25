@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.41", "WTT_Bias R1.41", overlay=false)
+indicator("WTT_Bias R1.42", "WTT_Bias R1.42", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,10 @@ indicator("WTT_Bias R1.41", "WTT_Bias R1.41", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.42 - Enhanced compression alerts with explicit direction indicators
+//        - Added "UP direction" and "DOWN direction" labels to compression alert messages
+//        - Makes breakout direction immediately clear in alert notifications
+//        - Applies to both bullish and bearish compression breakout alerts
 // R1.41 - Matched compression breakout triangle size to intensity decrease dots
 //        - Changed triangle markers from size.large to size.small to match dot size
 //        - Ensures visual consistency between compression markers and intensity dots
@@ -470,8 +474,8 @@ isBearBreakout = wasDoji and closeBreaksDown
 isBarConfirmed = not confirmOnBarClose or barstate.isconfirmed
 isBullCompressionSignal = isBullBreakout and isBarConfirmed
 isBearCompressionSignal = isBearBreakout and isBarConfirmed
-bullCompressionAlertMessage = "WaveRider WTT Compression: Bullish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
-bearCompressionAlertMessage = "WaveRider WTT Compression: Bearish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
+bullCompressionAlertMessage = "WaveRider WTT Compression: UP direction - Bullish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
+bearCompressionAlertMessage = "WaveRider WTT Compression: DOWN direction - Bearish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
 
 // ============================================================================
 // VISUAL ELEMENTS
