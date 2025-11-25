@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.42", "WTT_Bias R1.42", overlay=false)
+indicator("WTT_Bias R1.43", "WTT_Bias R1.43", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,12 @@ indicator("WTT_Bias R1.42", "WTT_Bias R1.42", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.43 - Fixed compression alert direction accuracy on intrabar reversals
+//        - Fixed issue where compression alerts could fire twice on same bar with incorrect direction
+//        - Added prioritization logic when both bullish and bearish breakouts occur simultaneously
+//        - Prioritizes based on current close position relative to doji range (above high = bull, below low = bear)
+//        - Resets opposite alert flag on direction reversal to allow correct alerts within same bar
+//        - Prevents duplicate alerts when both conditions are true by only allowing prioritized direction
 // R1.42 - Enhanced compression alerts with explicit direction indicators
 //        - Added "UP direction" and "DOWN direction" labels to compression alert messages
 //        - Makes breakout direction immediately clear in alert notifications
@@ -615,10 +621,25 @@ if barstate.isnew
 
 // Fire alert once per bar when breakout is detected (prevents TradingView's 15 alerts per 3 minutes limit)
 // Alert timing respects confirmOnBarClose setting: false = intrabar, true = on bar close
-if enableCompressionAlerts and isBullCompressionSignal and not bullBreakoutAlerted
+// When both directions are true simultaneously (price moved through entire doji range), prioritize based on current close position
+// If close is above doji high, prioritize bull; if below doji low, prioritize bear; otherwise use stronger percentage move
+// When one direction alerts (and not both are true), reset the opposite flag to allow direction reversal within the same bar
+bothBreakoutsTrue = isBullCompressionSignal and isBearCompressionSignal
+closeAboveDojiHigh = hasPriorOpenClose and close > dojiHighRef
+closeBelowDojiLow = hasPriorOpenClose and close < dojiLowRef
+prioritizeBull = bothBreakoutsTrue and (closeAboveDojiHigh or (not closeBelowDojiLow and bullMovePercent >= bearMovePercent))
+prioritizeBear = bothBreakoutsTrue and (closeBelowDojiLow or (not closeAboveDojiHigh and bearMovePercent > bullMovePercent))
+
+if enableCompressionAlerts and isBullCompressionSignal and not bullBreakoutAlerted and (not bothBreakoutsTrue or prioritizeBull)
     alert(bullCompressionAlertMessage, alert.freq_once_per_bar)
     bullBreakoutAlerted := true
+    // Only reset opposite flag if not both breakouts are true (prevents both alerts from firing when both conditions are true)
+    if not bothBreakoutsTrue
+        bearBreakoutAlerted := false  // Reset opposite flag to allow reversal
 
-if enableCompressionAlerts and isBearCompressionSignal and not bearBreakoutAlerted
+if enableCompressionAlerts and isBearCompressionSignal and not bearBreakoutAlerted and (not bothBreakoutsTrue or prioritizeBear)
     alert(bearCompressionAlertMessage, alert.freq_once_per_bar)
     bearBreakoutAlerted := true
+    // Only reset opposite flag if not both breakouts are true (prevents both alerts from firing when both conditions are true)
+    if not bothBreakoutsTrue
+        bullBreakoutAlerted := false  // Reset opposite flag to allow reversal
