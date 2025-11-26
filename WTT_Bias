@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.43", "WTT_Bias R1.43", overlay=false)
+indicator("WTT_Bias R1.44", "WTT_Bias R1.44", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,11 @@ indicator("WTT_Bias R1.43", "WTT_Bias R1.43", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.44 - Removed color and transparency input parameters
+//        - Removed Bullish Color, Bearish Color, Zero Color input parameters
+//        - Removed Histogram Transparency and Line Transparency input parameters
+//        - Replaced with hardcoded constants using previous default values
+//        - Simplifies indicator settings while maintaining visual appearance
 // R1.43 - Fixed compression alert direction accuracy on intrabar reversals
 //        - Fixed issue where compression alerts could fire twice on same bar with incorrect direction
 //        - Added prioritization logic when both bullish and bearish breakouts occur simultaneously
@@ -277,33 +282,15 @@ alertOnBarClose = input.bool(
      group="Alert Settings",
      tooltip="When enabled, alerts trigger once per bar at close using the final values, reducing missed triggers.")
 
-// Group: Colors
-bullishColor = input.color(
-     defval=color.new(color.rgb(50, 205, 50), 0),
-     title="Bullish Color",
-     group="Colors")
-
-bearishColor = input.color(
-     defval=color.new(color.rgb(218, 37, 96), 0),
-     title="Bearish Color",
-     group="Colors")
-
-zeroColor = input.color(
-     defval=color.new(color.yellow, 0),
-     title="Zero Color",
-     group="Colors")
-
-histTransparency = input.int(
-     defval=35,
-     title="Histogram Transparency (0-100)",
-     minval=0, maxval=100,
-     group="Colors")
-
-lineTransparency = input.int(
-     defval=0,
-     title="Line Transparency (0-100)",
-     minval=0, maxval=100,
-     group="Colors")
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+// Color and transparency constants (previously configurable inputs)
+BULLISH_COLOR = color.new(color.rgb(50, 205, 50), 0)  // Lime green
+BEARISH_COLOR = color.new(color.rgb(218, 37, 96), 0)  // Reddish-pink
+ZERO_COLOR = color.new(color.yellow, 0)  // Yellow
+HIST_TRANSPARENCY = 35
+LINE_TRANSPARENCY = 0
 
 // Group: Compression Settings
 dojiBodyPercent = input.float(0.15, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.15 = body <= 15% of total range) for a candle to qualify as a doji.")
@@ -442,15 +429,15 @@ biasIntensity = math.abs(smoothedBias)
 // Weak bias (near 0) → high transparency (light green/gray)
 // Formula: Exponential curve for smoother, more natural gradient transitions
 // Base transparency from user setting, with intensity-based variation
-// Maximum transparency range: histTransparency (strong) to histTransparency + 50 (weak)
+// Maximum transparency range: HIST_TRANSPARENCY (strong) to HIST_TRANSPARENCY + 50 (weak)
 maxLightnessRange = 50  // Additional transparency range for intensity variation
 gradientExponent = 0.7  // Exponential curve factor for smooth transitions (0.7 provides balanced curve)
 // Use exponential interpolation for smoother gradient: pow(biasIntensity, exponent) creates natural curve
-effectiveTransparency = smoothedBias == 0 ? histTransparency : 
-          math.max(0, math.min(100, histTransparency + (maxLightnessRange * (1 - math.pow(biasIntensity, gradientExponent)))))
+effectiveTransparency = smoothedBias == 0 ? HIST_TRANSPARENCY : 
+          math.max(0, math.min(100, HIST_TRANSPARENCY + (maxLightnessRange * (1 - math.pow(biasIntensity, gradientExponent)))))
 
 // Get base color for histogram
-histogramBaseColor = smoothedBias == 0 ? zeroColor : (smoothedBias > 0 ? bullishColor : bearishColor)
+histogramBaseColor = smoothedBias == 0 ? ZERO_COLOR : (smoothedBias > 0 ? BULLISH_COLOR : BEARISH_COLOR)
 histogramColor = color.new(histogramBaseColor, effectiveTransparency)
 
 // ============================================================================
@@ -489,18 +476,18 @@ bearCompressionAlertMessage = "WaveRider WTT Compression: DOWN direction - Beari
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
 
 // Histogram plots based on style selection
-histogramColorFinal = smoothedBias == 0 ? color.new(zeroColor, effectiveTransparency) : histogramColor
+histogramColorFinal = smoothedBias == 0 ? color.new(ZERO_COLOR, effectiveTransparency) : histogramColor
 showColumns = showHistogram and (histogramStyle == "Columns" or histogramStyle == "Both")
 showArea = showHistogram and (histogramStyle == "Area" or histogramStyle == "Both")
 // Area style uses slightly higher transparency for layered effect when Both is selected
 areaTransparency = histogramStyle == "Both" ? effectiveTransparency + 15 : effectiveTransparency
-histogramColorArea = smoothedBias == 0 ? color.new(zeroColor, areaTransparency) : color.new(histogramBaseColor, areaTransparency)
+histogramColorArea = smoothedBias == 0 ? color.new(ZERO_COLOR, areaTransparency) : color.new(histogramBaseColor, areaTransparency)
 
 plot(showColumns ? smoothedBias : na, "Bias Columns", style=plot.style_columns, color=histogramColorFinal)
 plot(showArea ? smoothedBias : na, "Bias Area", style=plot.style_area, color=histogramColorArea)
 
 // Signal line with lime, reddish-pink, or gray for quick directional recognition
-signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), lineTransparency) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), lineTransparency) : color.new(color.gray, lineTransparency)
+signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), LINE_TRANSPARENCY) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), LINE_TRANSPARENCY) : color.new(color.gray, LINE_TRANSPARENCY)
 plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
 
 // Detect when bias intensity decreases (stronger to weaker)
@@ -530,7 +517,7 @@ tableIntensityVariation = 35  // Increased range for more dramatic intensity vis
 tableTransparency = isNeutral ? tableBaseTransparency : math.max(0, math.min(100, tableBaseTransparency - (biasIntensity * tableIntensityVariation)))
 
 // Determine table background and text colors
-tableBgColor = isNeutral ? color.new(zeroColor, tableTransparency) : (isBullish ? color.new(bullishColor, tableTransparency) : color.new(bearishColor, tableTransparency))
+tableBgColor = isNeutral ? color.new(ZERO_COLOR, tableTransparency) : (isBullish ? color.new(BULLISH_COLOR, tableTransparency) : color.new(BEARISH_COLOR, tableTransparency))
 
 tableTextColor = isNeutral ? color.black : color.white
 
