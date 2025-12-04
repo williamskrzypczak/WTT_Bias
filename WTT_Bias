@@ -1,5 +1,5 @@
 //@version=5
-indicator("WTT_Bias R1.44", "WTT_Bias R1.44", overlay=false)
+indicator("WTT_Bias R1.48", "WTT_Bias R1.48", overlay=false)
 
 // ============================================================================
 // Copyright © 2025 Bulldog Ventures Inc. All rights reserved.
@@ -7,6 +7,29 @@ indicator("WTT_Bias R1.44", "WTT_Bias R1.44", overlay=false)
 // WaveRider Trading Technologies
 // 
 // REVISION HISTORY:
+// R1.48 - Changed default plot offset to -1 bar
+//        - Updated Plot Offset default value from 0 to -1
+//        - Shifts all indicator visuals backward by one bar by default
+//        - Improves alignment with price action for better visual correlation
+// R1.47 - Switched from SMA to EMA for bias smoothing
+//        - Changed smoothing calculation from Simple Moving Average (SMA) to Exponential Moving Average (EMA)
+//        - EMA provides improved responsiveness to recent price action
+//        - Updated tooltip to reflect EMA instead of SMA
+//        - Same smoothing length parameter (default 3) works identically
+// R1.46 - Removed all compression-related functionality
+//        - Removed Enable Compression Alerts input parameter
+//        - Removed all compression alert logic and state variables
+//        - Removed compression alert message variables
+//        - Removed compression detection calculations and logic
+//        - Removed compression visual markers (plotshape calls)
+//        - Removed entire Compression Settings input group
+//        - Code cleanup: removed unused lastEvaluatedBias variable
+// R1.45 - Added plot offset parameter for visual alignment
+//        - Added Plot Offset input parameter in Visual Settings group
+//        - Offset range: -20 to +20 bars (default -1)
+//        - Applies to all plots and markers (histogram, signal line, intensity dots)
+//        - Allows users to shift indicator visuals forward or backward to align with price action
+//        - Useful for correlating bias signals with other indicators or price movements
 // R1.44 - Removed color and transparency input parameters
 //        - Removed Bullish Color, Bearish Color, Zero Color input parameters
 //        - Removed Histogram Transparency and Line Transparency input parameters
@@ -191,16 +214,11 @@ indicator("WTT_Bias R1.44", "WTT_Bias R1.44", overlay=false)
 //       - Normalized bias oscillator (-1 to +1)
 //       - Optional info table and alerts
 //
-// This indicator combines two powerful tools:
-// 1. Bias Detection: Approximates buy/sell (bid/ask) activity within the current
-//    bar by classifying real-time close changes as upticks/downticks and
-//    distributing the current bar's volume changes accordingly. Due to Pine
-//    Script's lack of true order book access, this measures a proxy, not actual
-//    bid/ask prints.
-// 2. Compression Detection: Highlights potential breakout momentum that follows
-//    indecision candles (dojis). When a doji appears, the script waits for the
-//    next bar to close beyond the doji's range and surfaces that breakout
-//    direction with markers on the price chart.
+// This indicator approximates buy/sell (bid/ask) activity within the current
+// bar by classifying real-time close changes as upticks/downticks and
+// distributing the current bar's volume changes accordingly. Due to Pine
+// Script's lack of true order book access, this measures a proxy, not actual
+// bid/ask prints.
 // ============================================================================
 
 // ============================================================================
@@ -222,10 +240,10 @@ sourceMode = input.string(
      tooltip="Auto: realtime proxy on the last (live) bar, lower timeframe aggregation on historical bars. Realtime only: realtime proxy on live bar, lower TF on historical bars. Lower TF only: always use lower timeframe aggregation.")
 
 lowerTf = input.timeframe(
-     defval="5",
+     defval="4H",
      title="Lower Timeframe (for history)",
      group="Detection Settings",
-     tooltip="Timeframe used to approximate intrabar buy/sell on historical bars. Set lower than your chart TF (e.g., 30 minutes).")
+     tooltip="Timeframe used to approximate intrabar buy/sell on historical bars. Set lower than your chart TF (e.g., 4 hours).")
 
 neutralDeadband = input.float(
      defval=0.05,
@@ -239,7 +257,7 @@ smoothLength = input.int(
      title="Smoothing Length",
      minval=1, maxval=100,
      group="Detection Settings",
-     tooltip="Simple moving average length applied to the bias after deadband.")
+     tooltip="Exponential moving average length applied to the bias after deadband.")
 
 intensityAlertEnabled = input.bool(defval=true, title="Alert When Bias Intensity Weakens", group="Detection Settings", tooltip="Send an alert when the signal line dot appears, indicating bullish or bearish momentum is easing.")
 
@@ -275,6 +293,13 @@ showBiasTable = input.bool(
      group="Visual Settings",
      tooltip="Display current bias value in a color-coded table at the lower right corner of the chart.")
 
+plotOffset = input.int(
+     defval=-1,
+     title="Plot Offset",
+     minval=-20, maxval=20,
+     group="Visual Settings",
+     tooltip="Shifts all plots and markers forward (positive) or backward (negative) in time. Useful for aligning with price action or other indicators.")
+
 // Group: Alert Settings
 alertOnBarClose = input.bool(
      defval=true,
@@ -292,17 +317,6 @@ ZERO_COLOR = color.new(color.yellow, 0)  // Yellow
 HIST_TRANSPARENCY = 35
 LINE_TRANSPARENCY = 0
 
-// Group: Compression Settings
-dojiBodyPercent = input.float(0.15, "Doji Body Threshold", minval=0.0, maxval=0.5, step=0.01, group="Compression Settings", tooltip="Maximum body-to-range ratio (0.15 = body <= 15% of total range) for a candle to qualify as a doji.")
-requireCloseBreak = input.bool(false, "Require Close Breakout", group="Compression Settings", tooltip="When enabled, the breakout candle must close beyond the doji high/low. Disable to react on intrabar breaches.")
-confirmOnBarClose = input.bool(false, "Confirm Breakouts On Close", group="Compression Settings", tooltip="Wait for the bar to close before confirming breakout signals. Disable to allow intrabar alerts/markers that may disappear if price reverses.")
-breakoutMinPercent = input.float(0.2, "Minimum Breakout %", minval=0.0, maxval=10.0, step=0.1, group="Compression Settings", tooltip="Minimum percentage move from doji open/close required to trigger breakout alert. Higher values reduce false signals from small price movements.")
-showCompressionMarkers = input.bool(true, "Show Breakout Markers", group="Compression Settings", tooltip="Toggle display of the breakout triangles.")
-compressionUpColor = input.color(color.new(color.orange, 0), "Compression Uptrend Color", group="Compression Settings", tooltip="Marker color for bullish doji breakouts.")
-defaultPurple = color.rgb(128, 0, 255)
-compressionDownColor = input.color(color.new(defaultPurple, 0), "Compression Downtrend Color", group="Compression Settings", tooltip="Marker color for bearish doji breakouts.")
-enableCompressionAlerts = input.bool(true, "Enable Compression Alerts", group="Compression Settings", tooltip="Send an alert notification whenever a bullish or bearish doji breakout is detected.")
-
 // ============================================================================
 // CALCULATIONS - REALTIME PROXY (LAST BAR)
 // ============================================================================
@@ -311,13 +325,9 @@ var int upTickCount = 0
 var int downTickCount = 0
 var float buyVolume = 0.0
 var float sellVolume = 0.0
-// State variables for compression alerts (track if we've already alerted for current breakout)
-var bool bullBreakoutAlerted = false
-var bool bearBreakoutAlerted = false
 var float lastCloseRt = na
 var float lastVolumeRt = na
 var int lastBarIndex = na
-var float lastEvaluatedBias = na
 
 // Robust reset: check both barstate.isnew and bar_index change for reliability
 // This handles cases where barstate detection might fail after extended sessions
@@ -417,7 +427,7 @@ applyDeadband(val, db) => math.abs(val) < db ? 0.0 : val
 biased = applyDeadband(rawBias, neutralDeadband)
 
 // Smooth
-smoothedBias = ta.sma(biased, smoothLength)
+smoothedBias = ta.ema(biased, smoothLength)
 
 // Calculate bias intensity for dynamic color darkness
 // Stronger bias = darker colors (less transparency = darker/more solid)
@@ -441,36 +451,6 @@ histogramBaseColor = smoothedBias == 0 ? ZERO_COLOR : (smoothedBias > 0 ? BULLIS
 histogramColor = color.new(histogramBaseColor, effectiveTransparency)
 
 // ============================================================================
-// CALCULATIONS - COMPRESSION (DOJI BREAKOUT)
-// ============================================================================
-hasValidRange = not na(high) and not na(low) and high != low
-trueRange = hasValidRange ? high - low : na
-bodySize = not na(close) and not na(open) ? math.abs(close - open) : na
-isDoji = hasValidRange and not na(bodySize) and not na(trueRange) and trueRange > 0 and bodySize <= trueRange * dojiBodyPercent
-hasPriorBar = bar_index > 0
-wasDoji = hasPriorBar and nz(isDoji[1], false)
-hasPriorOpenClose = hasPriorBar and not na(open[1]) and not na(close[1])
-// Calculate reference prices from doji (higher for bullish, lower for bearish)
-dojiHighRef = hasPriorOpenClose ? math.max(open[1], close[1]) : na
-dojiLowRef = hasPriorOpenClose ? math.min(open[1], close[1]) : na
-// Calculate current price based on requireCloseBreak setting
-currentHighPrice = requireCloseBreak ? close : high
-currentLowPrice = requireCloseBreak ? close : low
-// Calculate percentage moves from reference prices
-bullMovePercent = hasPriorOpenClose and dojiHighRef > 0 ? ((currentHighPrice - dojiHighRef) / dojiHighRef) * 100 : 0.0
-bearMovePercent = hasPriorOpenClose and dojiLowRef > 0 ? ((dojiLowRef - currentLowPrice) / dojiLowRef) * 100 : 0.0
-// Breakout conditions: must break above/below AND exceed minimum percentage threshold
-closeBreaksUp = hasPriorOpenClose and (currentHighPrice > dojiHighRef) and (bullMovePercent >= breakoutMinPercent)
-closeBreaksDown = hasPriorOpenClose and (currentLowPrice < dojiLowRef) and (bearMovePercent >= breakoutMinPercent)
-isBullBreakout = wasDoji and closeBreaksUp
-isBearBreakout = wasDoji and closeBreaksDown
-isBarConfirmed = not confirmOnBarClose or barstate.isconfirmed
-isBullCompressionSignal = isBullBreakout and isBarConfirmed
-isBearCompressionSignal = isBearBreakout and isBarConfirmed
-bullCompressionAlertMessage = "WaveRider WTT Compression: UP direction - Bullish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
-bearCompressionAlertMessage = "WaveRider WTT Compression: DOWN direction - Bearish doji breakout on " + syminfo.ticker + " at " + str.tostring(close, format.mintick)
-
-// ============================================================================
 // VISUAL ELEMENTS
 // ============================================================================
 hZero = hline(0.0, "Zero Line", color=color.new(color.gray, 60))
@@ -483,12 +463,12 @@ showArea = showHistogram and (histogramStyle == "Area" or histogramStyle == "Bot
 areaTransparency = histogramStyle == "Both" ? effectiveTransparency + 15 : effectiveTransparency
 histogramColorArea = smoothedBias == 0 ? color.new(ZERO_COLOR, areaTransparency) : color.new(histogramBaseColor, areaTransparency)
 
-plot(showColumns ? smoothedBias : na, "Bias Columns", style=plot.style_columns, color=histogramColorFinal)
-plot(showArea ? smoothedBias : na, "Bias Area", style=plot.style_area, color=histogramColorArea)
+plot(showColumns ? smoothedBias : na, "Bias Columns", style=plot.style_columns, color=histogramColorFinal, offset=plotOffset)
+plot(showArea ? smoothedBias : na, "Bias Area", style=plot.style_area, color=histogramColorArea, offset=plotOffset)
 
 // Signal line with lime, reddish-pink, or gray for quick directional recognition
 signalLineColor = smoothedBias > 0 ? color.new(color.rgb(191, 255, 0), LINE_TRANSPARENCY) : smoothedBias < 0 ? color.new(color.rgb(255, 100, 140), LINE_TRANSPARENCY) : color.new(color.gray, LINE_TRANSPARENCY)
-plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2)
+plot(showSignalLine ? smoothedBias : na, "Signal", color=signalLineColor, linewidth=2, offset=plotOffset)
 
 // Detect when bias intensity decreases (stronger to weaker)
 previousBiasIntensity = math.abs(smoothedBias[1])
@@ -498,7 +478,7 @@ intensityDirection = smoothedBias > 0 ? "bullish" : smoothedBias < 0 ? "bearish"
 intensityDescription = intensityDirection == "neutral" ? "Neutral bias momentum compressing" : intensityDirection == "bullish" ? "Bullish momentum easing" : "Bearish momentum easing"
 
 // Plot dot on signal line when intensity decreases (exclude neutral/zero cross gray dots)
-plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral" ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.small)
+plotshape(showSignalLine and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral" ? smoothedBias : na, title="Intensity Decrease Dot", style=shape.circle, location=location.absolute, color=signalLineColor, size=size.tiny, offset=plotOffset)
 
 // ============================================================================
 // BIAS TABLE
@@ -583,10 +563,6 @@ else if not showBiasTable and not na(biasTable)
     table.delete(biasTable)
     biasTable := na
 
-// Compression breakout markers on price chart
-plotshape(showCompressionMarkers and isBullCompressionSignal, title="Doji Breakout Up", style=shape.triangleup, location=location.belowbar, size=size.small, color=compressionUpColor)
-plotshape(showCompressionMarkers and isBearCompressionSignal, title="Doji Breakout Down", style=shape.triangledown, location=location.abovebar, size=size.small, color=compressionDownColor)
-
 // =========================================================================
 // ALERTS
 // =========================================================================
@@ -597,36 +573,3 @@ if shouldEvaluateNow
     if intensityAlertEnabled and showIntensityDecreaseDots and intensityDecreased and intensityDirection != "neutral"
         alertMsg = "WTT_Bias (" + syminfo.ticker + "): " + intensityDescription
         alert(alertMsg, alertOnBarClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar)
-
-    lastEvaluatedBias := smoothedBias
-
-// Compression breakout alerts - fire once per bar (intrabar if confirmOnBarClose is false, on close if true)
-// Reset alert flags on new bar
-if barstate.isnew
-    bullBreakoutAlerted := false
-    bearBreakoutAlerted := false
-
-// Fire alert once per bar when breakout is detected (prevents TradingView's 15 alerts per 3 minutes limit)
-// Alert timing respects confirmOnBarClose setting: false = intrabar, true = on bar close
-// When both directions are true simultaneously (price moved through entire doji range), prioritize based on current close position
-// If close is above doji high, prioritize bull; if below doji low, prioritize bear; otherwise use stronger percentage move
-// When one direction alerts (and not both are true), reset the opposite flag to allow direction reversal within the same bar
-bothBreakoutsTrue = isBullCompressionSignal and isBearCompressionSignal
-closeAboveDojiHigh = hasPriorOpenClose and close > dojiHighRef
-closeBelowDojiLow = hasPriorOpenClose and close < dojiLowRef
-prioritizeBull = bothBreakoutsTrue and (closeAboveDojiHigh or (not closeBelowDojiLow and bullMovePercent >= bearMovePercent))
-prioritizeBear = bothBreakoutsTrue and (closeBelowDojiLow or (not closeAboveDojiHigh and bearMovePercent > bullMovePercent))
-
-if enableCompressionAlerts and isBullCompressionSignal and not bullBreakoutAlerted and (not bothBreakoutsTrue or prioritizeBull)
-    alert(bullCompressionAlertMessage, alert.freq_once_per_bar)
-    bullBreakoutAlerted := true
-    // Only reset opposite flag if not both breakouts are true (prevents both alerts from firing when both conditions are true)
-    if not bothBreakoutsTrue
-        bearBreakoutAlerted := false  // Reset opposite flag to allow reversal
-
-if enableCompressionAlerts and isBearCompressionSignal and not bearBreakoutAlerted and (not bothBreakoutsTrue or prioritizeBear)
-    alert(bearCompressionAlertMessage, alert.freq_once_per_bar)
-    bearBreakoutAlerted := true
-    // Only reset opposite flag if not both breakouts are true (prevents both alerts from firing when both conditions are true)
-    if not bothBreakoutsTrue
-        bullBreakoutAlerted := false  // Reset opposite flag to allow reversal
